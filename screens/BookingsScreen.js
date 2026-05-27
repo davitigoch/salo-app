@@ -54,6 +54,14 @@ export default function BookingsScreen({ navigation }) {
         }}
       />
 
+      <PrimaryButton
+        title="Weekly Calendar"
+        onPress={() => navigation.navigate(ROUTES.WeeklyCalendar)}
+        style={{
+          marginTop: 10,
+        }}
+      />
+
       {isBookingsLoading ? (
         <Text
           style={{
@@ -112,6 +120,16 @@ export default function BookingsScreen({ navigation }) {
             }}
           >
             {booking.notes || 'Customer appointment'}
+          </Text>
+
+          <Text
+            style={{
+              color: COLORS.accent,
+              marginTop: 8,
+              fontWeight: '700',
+            }}
+          >
+            ${Number(booking.price || 0).toFixed(2)}
           </Text>
 
           <View
