@@ -14,6 +14,7 @@ create table if not exists public.businesses (
     {"id":"nails","name":"Nails","price":60,"duration_minutes":60},
     {"id":"facial","name":"Facial","price":75,"duration_minutes":60}
   ]'::jsonb,
+  onboarding_completed boolean not null default false,
   stripe_account_id text,
   ai_settings jsonb not null default '{}'::jsonb,
   public_booking_enabled boolean not null default true,
@@ -588,6 +589,85 @@ create policy "Users can delete own bookings"
 on public.bookings
 for delete
 using (auth.uid() = user_id);
+
+create table if not exists public.ai_recommendations (
+  id uuid primary key default gen_random_uuid(),
+  business_id uuid not null references public.businesses(id) on delete cascade,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  booking_id uuid references public.bookings(id) on delete set null,
+  recommendation_type text not null check (recommendation_type in ('best_available', 'fastest_appointment', 'preferred_staff')),
+  accepted boolean not null default false,
+  reasoning_metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default timezone('utc', now())
+);
+
+create index if not exists ai_recommendations_business_id_idx on public.ai_recommendations (business_id);
+create index if not exists ai_recommendations_user_id_idx on public.ai_recommendations (user_id);
+create index if not exists ai_recommendations_booking_id_idx on public.ai_recommendations (booking_id);
+create index if not exists ai_recommendations_type_created_idx on public.ai_recommendations (recommendation_type, created_at desc);
+
+alter table public.ai_recommendations enable row level security;
+
+create policy "Owners can read own ai recommendations"
+on public.ai_recommendations
+for select
+using (
+  auth.uid() = user_id
+  and exists (
+    select 1
+    from public.businesses b
+    where b.id = business_id
+      and b.owner_user_id = auth.uid()
+  )
+);
+
+create policy "Owners can insert own ai recommendations"
+on public.ai_recommendations
+for insert
+with check (
+  auth.uid() = user_id
+  and exists (
+    select 1
+    from public.businesses b
+    where b.id = business_id
+      and b.owner_user_id = auth.uid()
+  )
+);
+
+create policy "Owners can update own ai recommendations"
+on public.ai_recommendations
+for update
+using (
+  auth.uid() = user_id
+  and exists (
+    select 1
+    from public.businesses b
+    where b.id = business_id
+      and b.owner_user_id = auth.uid()
+  )
+)
+with check (
+  auth.uid() = user_id
+  and exists (
+    select 1
+    from public.businesses b
+    where b.id = business_id
+      and b.owner_user_id = auth.uid()
+  )
+);
+
+create policy "Owners can delete own ai recommendations"
+on public.ai_recommendations
+for delete
+using (
+  auth.uid() = user_id
+  and exists (
+    select 1
+    from public.businesses b
+    where b.id = business_id
+      and b.owner_user_id = auth.uid()
+  )
+);
 
 create or replace function public.get_business_booked_slots(
   target_business_id uuid,

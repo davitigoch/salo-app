@@ -19,6 +19,7 @@ type BookingDraft = {
   business_id: string;
   business_slug: string;
   service_id: string;
+  booking_token?: string;
 };
 
 function toMajorUnits(amount: number) {
@@ -72,9 +73,17 @@ Deno.serve(async (req) => {
   }
 
   if (existingPayment?.booking_id) {
+    const { data: existingBookingTokenRow } = await adminClient
+      .from('bookings')
+      .select('booking_token, status')
+      .eq('id', existingPayment.booking_id)
+      .maybeSingle();
+
     return new Response(
       JSON.stringify({
         bookingId: existingPayment.booking_id,
+        bookingToken: existingBookingTokenRow?.booking_token || null,
+        bookingStatus: existingBookingTokenRow?.status || null,
         paymentId: existingPayment.id,
         status: existingPayment.status,
         alreadyFinalized: true,
@@ -204,6 +213,9 @@ Deno.serve(async (req) => {
     stripe_payment_intent_id: paymentIntentId,
     payment_charge_mode: chargeMode,
     payment_status: 'succeeded',
+    notification_hooks: {
+      confirmed_sms: 'pending',
+    },
   };
 
   const bookingInsertPayload = {
@@ -219,6 +231,7 @@ Deno.serve(async (req) => {
     user_id: business.owner_user_id,
     business_id: business.id,
     business_slug: business.slug,
+    booking_token: bookingDraft.booking_token || null,
     booking_source: 'public',
     status: 'confirmed',
     booking_metadata: bookingMetadata,
@@ -227,7 +240,7 @@ Deno.serve(async (req) => {
   const { data: insertedBooking, error: bookingInsertError } = await adminClient
     .from('bookings')
     .insert(bookingInsertPayload)
-    .select('id')
+    .select('id, booking_token, status')
     .single();
 
   if (bookingInsertError || !insertedBooking) {
@@ -260,6 +273,8 @@ Deno.serve(async (req) => {
     return new Response(
       JSON.stringify({
         bookingId: insertedBooking.id,
+        bookingToken: insertedBooking.booking_token,
+        bookingStatus: insertedBooking.status,
         paymentId: existingPayment.id,
         finalized: true,
       }),
@@ -302,6 +317,8 @@ Deno.serve(async (req) => {
   return new Response(
     JSON.stringify({
       bookingId: insertedBooking.id,
+        bookingToken: insertedBooking.booking_token,
+        bookingStatus: insertedBooking.status,
       paymentId: insertedPayment.id,
       finalized: true,
     }),

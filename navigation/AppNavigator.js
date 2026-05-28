@@ -28,9 +28,11 @@ import StaffAvailabilityScreen from '../screens/StaffAvailabilityScreen';
 import BusinessHoursScreen from '../screens/BusinessHoursScreen';
 import WeeklyCalendarScreen from '../screens/WeeklyCalendarScreen';
 import DailyScheduleScreen from '../screens/DailyScheduleScreen';
+import OnboardingWizardScreen from '../screens/OnboardingWizardScreen';
 import PaymentSettingsScreen from '../screens/PaymentSettingsScreen';
 import NotificationSettingsScreen from '../screens/NotificationSettingsScreen';
 import PublicBookingScreen from '../screens/PublicBookingScreen';
+import ClientAppointmentPortalScreen from '../screens/ClientAppointmentPortalScreen';
 import MainTabNavigator from './MainTabNavigator';
 
 const linking = {
@@ -39,6 +41,8 @@ const linking = {
       AuthLoading: 'loading',
       Welcome: '',
       Login: 'login',
+      OnboardingWizard: 'onboarding',
+      AppointmentPortal: 'appointment/:booking_token',
       PublicBooking: ':slug',
       MainTabs: 'app',
       AddBooking: 'booking/new',
@@ -58,6 +62,38 @@ const linking = {
 };
 
 const Stack = createNativeStackNavigator();
+const BUSINESS_SELECT_COLUMNS = 'id, owner_user_id, business_name, slug, description, timezone, services, public_booking_enabled, onboarding_completed, deposits_enabled, deposit_percentage, require_card_on_booking, stripe_account_id, stripe_charges_enabled, stripe_payouts_enabled, created_at';
+const BUSINESS_BOOTSTRAP_TIMEOUT_MS = 15000;
+
+function normalizeOnboardingStatus(businessRecord) {
+  if (!businessRecord) {
+    return null;
+  }
+
+  if (typeof businessRecord.onboarding_completed === 'boolean') {
+    return businessRecord;
+  }
+
+  const createdAtValue = new Date(businessRecord.created_at || 0).getTime();
+  const hasValidCreatedAt = !Number.isNaN(createdAtValue) && createdAtValue > 0;
+  const isNewBusiness = hasValidCreatedAt
+    ? Date.now() - createdAtValue <= 24 * 60 * 60 * 1000
+    : false;
+
+  const normalized = {
+    ...businessRecord,
+    onboarding_completed: !isNewBusiness,
+  };
+
+  console.log('[SALO] onboarding status normalized', {
+    businessId: businessRecord.id,
+    sourceValue: businessRecord.onboarding_completed,
+    normalizedValue: normalized.onboarding_completed,
+    isNewBusiness,
+  });
+
+  return normalized;
+}
 
 export default function AppNavigator() {
   const [session, setSession] = useState(null);
@@ -84,14 +120,21 @@ export default function AppNavigator() {
   const [businessHours, setBusinessHours] = useState([]);
   const [isBusinessHoursLoading, setIsBusinessHoursLoading] = useState(false);
   const [businessHoursError, setBusinessHoursError] = useState('');
+  const [businessBootstrapError, setBusinessBootstrapError] = useState('');
 
   useEffect(() => {
     let isMounted = true;
 
     async function loadSession() {
+      console.log('[SALO] session load start');
       const {
         data: { session: currentSession },
       } = await supabase.auth.getSession();
+
+      console.log('[SALO] session loaded', {
+        hasSession: Boolean(currentSession),
+        userId: currentSession?.user?.id || null,
+      });
 
       if (isMounted) {
         setSession(currentSession);
@@ -104,6 +147,11 @@ export default function AppNavigator() {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      console.log('[SALO] auth state changed', {
+        event,
+        hasSession: Boolean(nextSession),
+        userId: nextSession?.user?.id || null,
+      });
       setSession(nextSession);
       if (event === 'SIGNED_OUT') {
         setUnauthStartRoute(ROUTES.Login);
@@ -149,34 +197,51 @@ export default function AppNavigator() {
 
   const fetchOrCreateBusiness = useCallback(async () => {
     if (!session?.user?.id) {
+      console.log('[SALO] business bootstrap skipped (no session)');
       setBusiness(null);
+      setBusinessBootstrapError('');
+      setIsBusinessLoading(false);
       return { error: null };
     }
 
-    console.log('[SALO] fetchOrCreateBusiness user.id:', session.user.id);
+    console.log('[SALO] business fetch start', { userId: session.user.id });
 
     setIsBusinessLoading(true);
     setBusinessError('');
+    setBusinessBootstrapError('');
 
     const { data, error } = await supabase
       .from('businesses')
-      .select('id, owner_user_id, business_name, slug, description, timezone, services, public_booking_enabled, deposits_enabled, deposit_percentage, require_card_on_booking, stripe_account_id, stripe_charges_enabled, stripe_payouts_enabled, created_at')
+      .select(BUSINESS_SELECT_COLUMNS)
       .eq('owner_user_id', session.user.id)
       .order('created_at', { ascending: true });
 
-    console.log('[SALO] fetched businesses result:', data);
+    console.log('[SALO] business fetch end', {
+      userId: session.user.id,
+      resultCount: Array.isArray(data) ? data.length : 0,
+      hasError: Boolean(error),
+      errorMessage: error?.message || null,
+    });
 
     if (error) {
       setBusinessError(error.message);
+      setBusinessBootstrapError(`Could not load business profile: ${error.message}`);
       setIsBusinessLoading(false);
       return { error };
     }
 
     if (Array.isArray(data) && data.length > 0) {
-      setBusiness(data[0]);
+      const normalizedBusiness = normalizeOnboardingStatus(data[0]);
+      console.log('[SALO] business found', {
+        businessId: normalizedBusiness?.id,
+        onboardingCompleted: normalizedBusiness?.onboarding_completed,
+      });
+      setBusiness(normalizedBusiness);
       setIsBusinessLoading(false);
       return { error: null };
     }
+
+    console.log('[SALO] business missing, creating default business', { userId: session.user.id });
 
     const slugBase = String(session.user.email || 'salo')
       .split('@')[0]
@@ -194,7 +259,7 @@ export default function AppNavigator() {
         description: 'Luxury salon booking experience',
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
       })
-      .select('id, owner_user_id, business_name, slug, description, timezone, services, public_booking_enabled, deposits_enabled, deposit_percentage, require_card_on_booking, stripe_account_id, stripe_charges_enabled, stripe_payouts_enabled, created_at')
+      .select(BUSINESS_SELECT_COLUMNS)
       .single();
 
     if (createError && createError.code === '23505') {
@@ -208,7 +273,7 @@ export default function AppNavigator() {
           description: 'Luxury salon booking experience',
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
         })
-        .select('id, owner_user_id, business_name, slug, description, timezone, services, public_booking_enabled, deposits_enabled, deposit_percentage, require_card_on_booking, stripe_account_id, stripe_charges_enabled, stripe_payouts_enabled, created_at')
+        .select(BUSINESS_SELECT_COLUMNS)
         .single();
 
       createdBusiness = fallbackResult.data;
@@ -217,14 +282,50 @@ export default function AppNavigator() {
 
     if (createError) {
       setBusinessError(createError.message);
+      setBusinessBootstrapError(`Could not create default business: ${createError.message}`);
       setIsBusinessLoading(false);
       return { error: createError };
     }
 
-    setBusiness(createdBusiness);
+    if (!createdBusiness) {
+      const fallbackError = { message: 'Business bootstrap returned no data.' };
+      setBusinessError(fallbackError.message);
+      setBusinessBootstrapError('Could not complete business setup. Please retry or logout.');
+      setIsBusinessLoading(false);
+      return { error: fallbackError };
+    }
+
+    const normalizedCreatedBusiness = normalizeOnboardingStatus(createdBusiness);
+    console.log('[SALO] business created', {
+      businessId: normalizedCreatedBusiness?.id,
+      onboardingCompleted: normalizedCreatedBusiness?.onboarding_completed,
+    });
+    setBusiness(normalizedCreatedBusiness);
     setIsBusinessLoading(false);
     return { error: null };
   }, [session?.user?.email, session?.user?.id]);
+
+  const retryBusinessBootstrap = useCallback(async () => {
+    console.log('[SALO] business bootstrap retry triggered');
+    setBusinessBootstrapError('');
+    await fetchOrCreateBusiness();
+  }, [fetchOrCreateBusiness]);
+
+  useEffect(() => {
+    if (!session?.user?.id || !isBusinessLoading) {
+      return undefined;
+    }
+
+    const timeoutId = setTimeout(() => {
+      console.log('[SALO] business fetch timeout fallback triggered', {
+        userId: session.user.id,
+      });
+      setIsBusinessLoading(false);
+      setBusinessBootstrapError('Session setup is taking too long. Please retry or logout.');
+    }, BUSINESS_BOOTSTRAP_TIMEOUT_MS);
+
+    return () => clearTimeout(timeoutId);
+  }, [isBusinessLoading, session?.user?.id]);
 
   useEffect(() => {
     fetchOrCreateBusiness();
@@ -345,7 +446,7 @@ export default function AppNavigator() {
       .update(payload)
       .eq('id', business.id)
       .eq('owner_user_id', session.user.id)
-      .select('id, owner_user_id, business_name, slug, description, timezone, services, public_booking_enabled, deposits_enabled, deposit_percentage, require_card_on_booking, stripe_account_id, stripe_charges_enabled, stripe_payouts_enabled, created_at')
+      .select(BUSINESS_SELECT_COLUMNS)
       .single();
 
     if (error) {
@@ -353,7 +454,61 @@ export default function AppNavigator() {
       return { error };
     }
 
-    setBusiness(data);
+    setBusiness(normalizeOnboardingStatus(data));
+    return { error: null };
+  };
+
+  const saveBusinessProfile = async (profileInput) => {
+    if (!business?.id || !session?.user?.id) {
+      return { error: { message: 'Business is not ready yet.' } };
+    }
+
+    setBusinessError('');
+
+    const payload = {
+      business_name: String(profileInput?.business_name || '').trim(),
+      description: String(profileInput?.description || '').trim(),
+      timezone: String(profileInput?.timezone || 'UTC').trim() || 'UTC',
+    };
+
+    const { data, error } = await supabase
+      .from('businesses')
+      .update(payload)
+      .eq('id', business.id)
+      .eq('owner_user_id', session.user.id)
+      .select(BUSINESS_SELECT_COLUMNS)
+      .single();
+
+    if (error) {
+      setBusinessError(error.message);
+      return { error };
+    }
+
+    setBusiness(normalizeOnboardingStatus(data));
+    return { error: null };
+  };
+
+  const completeOnboarding = async () => {
+    if (!business?.id || !session?.user?.id) {
+      return { error: { message: 'Business is not ready yet.' } };
+    }
+
+    setBusinessError('');
+
+    const { data, error } = await supabase
+      .from('businesses')
+      .update({ onboarding_completed: true })
+      .eq('id', business.id)
+      .eq('owner_user_id', session.user.id)
+      .select(BUSINESS_SELECT_COLUMNS)
+      .single();
+
+    if (error) {
+      setBusinessError(error.message);
+      return { error };
+    }
+
+    setBusiness(normalizeOnboardingStatus(data));
     return { error: null };
   };
 
@@ -641,7 +796,7 @@ export default function AppNavigator() {
     }
 
     setBookings((previousBookings) => [data, ...previousBookings]);
-    return { error: null };
+    return { error: null, data };
   };
 
   const updateBooking = async (bookingId, bookingInput) => {
@@ -670,7 +825,7 @@ export default function AppNavigator() {
       )
     );
 
-    return { error: null };
+    return { error: null, data };
   };
 
   const deleteBooking = async (bookingId) => {
@@ -696,6 +851,32 @@ export default function AppNavigator() {
     );
 
     return { error: null };
+  };
+
+  const logAiRecommendation = async ({
+    recommendationType,
+    accepted,
+    reasoningMetadata,
+    bookingId,
+  }) => {
+    if (!session?.user?.id || !business?.id || !recommendationType) {
+      return { error: { message: 'Business or recommendation type is missing.' } };
+    }
+
+    const payload = {
+      business_id: business.id,
+      user_id: session.user.id,
+      booking_id: bookingId || null,
+      recommendation_type: recommendationType,
+      accepted: Boolean(accepted),
+      reasoning_metadata: reasoningMetadata || {},
+    };
+
+    const { error } = await supabase
+      .from('ai_recommendations')
+      .insert(payload);
+
+    return { error };
   };
 
   const addClient = async (clientInput) => {
@@ -977,6 +1158,7 @@ export default function AppNavigator() {
       await cancelBookingReminders();
       setSession(null);
       setBusiness(null);
+      setBusinessBootstrapError('');
       setBusinessHours([]);
       setBookings([]);
       setClients([]);
@@ -1002,6 +1184,8 @@ export default function AppNavigator() {
       fetchBusinessHours,
       saveBusinessHours,
       saveBusinessPaymentSettings,
+      saveBusinessProfile,
+      completeOnboarding,
       signIn,
       signUp,
       signOut,
@@ -1016,7 +1200,10 @@ export default function AppNavigator() {
       isBusinessHoursLoading,
       businessHoursError,
       fetchBusinessHours,
+      saveBusinessHours,
       saveBusinessPaymentSettings,
+      saveBusinessProfile,
+      completeOnboarding,
     ]
   );
 
@@ -1029,8 +1216,9 @@ export default function AppNavigator() {
       addBooking,
       updateBooking,
       deleteBooking,
+      logAiRecommendation,
     }),
-    [bookings, isBookingsLoading, bookingsError, fetchBookings]
+    [bookings, isBookingsLoading, bookingsError, fetchBookings, logAiRecommendation]
   );
 
   const clientsValue = useMemo(
@@ -1118,7 +1306,27 @@ export default function AppNavigator() {
                     </>
                   ) : null}
 
-                  {!isAuthLoading && session ? (
+                  {!isAuthLoading && session && (isBusinessLoading || !business) ? (
+                    <Stack.Screen name={ROUTES.AuthLoading}>
+                      {(props) => (
+                        <AuthLoadingScreen
+                          {...props}
+                          errorMessage={businessBootstrapError || (businessError && !isBusinessLoading ? businessError : '')}
+                          onRetry={retryBusinessBootstrap}
+                          onLogout={signOut}
+                        />
+                      )}
+                    </Stack.Screen>
+                  ) : null}
+
+                  {!isAuthLoading && session && !isBusinessLoading && business && !business.onboarding_completed ? (
+                    <Stack.Screen
+                      name={ROUTES.OnboardingWizard}
+                      component={OnboardingWizardScreen}
+                    />
+                  ) : null}
+
+                  {!isAuthLoading && session && !isBusinessLoading && business?.onboarding_completed ? (
                     <>
                       <Stack.Screen
                         name={ROUTES.MainTabs}
@@ -1174,6 +1382,11 @@ export default function AppNavigator() {
                       />
                     </>
                   ) : null}
+
+                  <Stack.Screen
+                    name={ROUTES.AppointmentPortal}
+                    component={ClientAppointmentPortalScreen}
+                  />
 
                   <Stack.Screen
                     name={ROUTES.PublicBooking}

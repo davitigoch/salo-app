@@ -5,6 +5,7 @@ import {
   Linking,
   Platform,
   ScrollView,
+  Share,
   Text,
   TextInput,
   TouchableOpacity,
@@ -12,6 +13,7 @@ import {
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as ExpoLinking from 'expo-linking';
+import * as Clipboard from 'expo-clipboard';
 
 import PrimaryButton from '../components/PrimaryButton';
 import {
@@ -121,6 +123,24 @@ function parseDateValue(value) {
   return parsed;
 }
 
+function generateSecureBookingToken() {
+  if (globalThis.crypto?.randomUUID) {
+    return globalThis.crypto.randomUUID().replace(/-/g, '');
+  }
+
+  if (globalThis.crypto?.getRandomValues) {
+    const bytes = new Uint8Array(16);
+    globalThis.crypto.getRandomValues(bytes);
+    return Array.from(bytes).map((byte) => byte.toString(16).padStart(2, '0')).join('');
+  }
+
+  return `${Date.now().toString(16)}${Math.random().toString(16).slice(2, 14)}`;
+}
+
+function buildManageAppointmentLink(token) {
+  return ExpoLinking.createURL(`appointment/${token}`);
+}
+
 export default function PublicBookingScreen({ route }) {
   const slug = route?.params?.slug;
   const [business, setBusiness] = useState(null);
@@ -143,6 +163,7 @@ export default function PublicBookingScreen({ route }) {
   const [isSlotsLoading, setIsSlotsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
+  const [manageAppointmentUrl, setManageAppointmentUrl] = useState('');
   const [checkoutUrl, setCheckoutUrl] = useState('');
   const [pendingBookingDraft, setPendingBookingDraft] = useState(null);
 
@@ -398,7 +419,16 @@ export default function PublicBookingScreen({ route }) {
         return;
       }
 
-      setSuccessMessage('Payment received and booking confirmed. See you soon.');
+      const finalizedToken = data?.bookingToken || pendingBookingDraft?.booking_token || '';
+      const finalizedStatus = data?.bookingStatus || 'confirmed';
+      const finalizedLink = finalizedToken ? buildManageAppointmentLink(finalizedToken) : '';
+
+      setSuccessMessage(
+        finalizedStatus === 'pending'
+          ? 'Your appointment is pending review.'
+          : 'Your appointment is confirmed.'
+      );
+      setManageAppointmentUrl(finalizedLink);
       setPendingBookingDraft(null);
       setCheckoutUrl('');
       resetBookingForm();
@@ -438,6 +468,9 @@ export default function PublicBookingScreen({ route }) {
 
     setIsSubmitting(true);
     setSuccessMessage('');
+    setManageAppointmentUrl('');
+
+    const bookingToken = generateSecureBookingToken();
 
     const basePayload = {
       client_name: clientName.trim(),
@@ -452,6 +485,7 @@ export default function PublicBookingScreen({ route }) {
       user_id: business.owner_user_id,
       business_id: business.id,
       business_slug: business.slug,
+      booking_token: bookingToken,
       booking_source: 'public',
       status: 'pending',
       booking_metadata: {
@@ -463,6 +497,9 @@ export default function PublicBookingScreen({ route }) {
         staff_member_name: selectedStaff?.name || null,
         staff_member_role: selectedStaff?.role || null,
         staff_member_color: selectedStaff?.color || null,
+        notification_hooks: {
+          confirmed_sms: 'pending',
+        },
       },
     };
 
@@ -480,7 +517,8 @@ export default function PublicBookingScreen({ route }) {
         return;
       }
 
-      setSuccessMessage('Your appointment has been requested. We will confirm it shortly.');
+      setSuccessMessage('Your appointment is pending review.');
+      setManageAppointmentUrl(buildManageAppointmentLink(bookingToken));
       resetBookingForm();
       appendLocalBookedSlot();
       return;
@@ -544,6 +582,7 @@ export default function PublicBookingScreen({ route }) {
       business_id: business.id,
       business_slug: business.slug,
       service_id: selectedService.id,
+      booking_token: bookingToken,
     });
     setCheckoutUrl(checkoutData.checkoutUrl);
 
@@ -695,6 +734,76 @@ export default function PublicBookingScreen({ route }) {
               }}
             >
               <Text style={{ color: '#BBF7D0' }}>{successMessage}</Text>
+
+              {manageAppointmentUrl ? (
+                <>
+                  <Text style={{ color: '#C4B5FD', marginTop: 10, fontSize: 12 }}>
+                    Manage Appointment Link
+                  </Text>
+                  <Text style={{ color: '#DDD6FE', marginTop: 4, fontSize: 12 }}>
+                    {manageAppointmentUrl}
+                  </Text>
+
+                  <View style={{ flexDirection: 'row', marginTop: 10 }}>
+                    <TouchableOpacity
+                      onPress={() => Linking.openURL(manageAppointmentUrl)}
+                      style={{
+                        backgroundColor: '#1E1B4B',
+                        borderColor: '#4338CA',
+                        borderWidth: 1,
+                        borderRadius: 10,
+                        paddingHorizontal: 12,
+                        paddingVertical: 8,
+                        marginRight: 8,
+                      }}
+                    >
+                      <Text style={{ color: '#EDE9FE', fontSize: 12, fontWeight: '700' }}>
+                        Manage Appointment
+                      </Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      onPress={async () => {
+                        await Clipboard.setStringAsync(manageAppointmentUrl);
+                        Alert.alert('Copied', 'Manage appointment link copied.');
+                      }}
+                      style={{
+                        backgroundColor: '#15151B',
+                        borderColor: '#2D2D38',
+                        borderWidth: 1,
+                        borderRadius: 10,
+                        paddingHorizontal: 12,
+                        paddingVertical: 8,
+                        marginRight: 8,
+                      }}
+                    >
+                      <Text style={{ color: COLORS.textPrimary, fontSize: 12, fontWeight: '700' }}>
+                        Copy Link
+                      </Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      onPress={() => {
+                        Share.share({
+                          message: manageAppointmentUrl,
+                        });
+                      }}
+                      style={{
+                        backgroundColor: '#15151B',
+                        borderColor: '#2D2D38',
+                        borderWidth: 1,
+                        borderRadius: 10,
+                        paddingHorizontal: 12,
+                        paddingVertical: 8,
+                      }}
+                    >
+                      <Text style={{ color: COLORS.textPrimary, fontSize: 12, fontWeight: '700' }}>
+                        Share
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </>
+              ) : null}
             </View>
           ) : null}
 

@@ -13,6 +13,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 
 import BackButton from '../components/BackButton';
 import PrimaryButton from '../components/PrimaryButton';
+import { getDeterministicSchedulingRecommendations } from '../constants/aiScheduling';
 import {
   formatDateValue,
   generateAvailableTimeSlots,
@@ -130,7 +131,7 @@ function PickerField({ label, value, onPress }) {
 }
 
 export default function AddBookingScreen({ navigation, route }) {
-  const { bookings, addBooking, updateBooking } = useBookings();
+  const { bookings, addBooking, updateBooking, logAiRecommendation } = useBookings();
   const { businessHours } = useAuth();
   const {
     services,
@@ -166,6 +167,7 @@ export default function AddBookingScreen({ navigation, route }) {
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [selectedRecommendationType, setSelectedRecommendationType] = useState('');
 
   const openDatePicker = () => {
     setShowDatePicker(true);
@@ -279,6 +281,55 @@ export default function AddBookingScreen({ navigation, route }) {
     }
   }, [selectedSlotTime, slotsResult.slots]);
 
+  useEffect(() => {
+    setSelectedRecommendationType('');
+  }, [dateValue, selectedServiceId, selectedStaffId, duration]);
+
+  const aiRecommendations = useMemo(() => {
+    return getDeterministicSchedulingRecommendations({
+      date: dateValue,
+      slots: slotsResult.slots,
+      businessHours,
+      staffMembers: activeStaff,
+      selectedStaffId,
+      staffAvailability,
+      existingBookings: existingBookingsForDate,
+      serviceDurationMinutes,
+      excludeBookingId: bookingToEdit?.id,
+    });
+  }, [
+    activeStaff,
+    bookingToEdit?.id,
+    businessHours,
+    dateValue,
+    existingBookingsForDate,
+    selectedStaffId,
+    serviceDurationMinutes,
+    slotsResult.slots,
+    staffAvailability,
+  ]);
+
+  const onApplySuggestion = (suggestion) => {
+    setSelectedSlotTime(suggestion.slotValue);
+    if (suggestion.type === 'preferred_staff' && suggestion.staffId) {
+      setSelectedStaffId(suggestion.staffId);
+    }
+    setSelectedRecommendationType(suggestion.type);
+  };
+
+  const isRecommendationAccepted = (recommendation) => {
+    if (selectedRecommendationType) {
+      return recommendation.type === selectedRecommendationType;
+    }
+
+    const matchesSlot = recommendation.slotValue === selectedSlotTime;
+    const matchesStaff = recommendation.staffId
+      ? recommendation.staffId === (selectedStaff?.id || null)
+      : true;
+
+    return matchesSlot && matchesStaff;
+  };
+
   const onSave = async () => {
     const normalizedDate = formatDateValue(dateValue);
     const normalizedTime = selectedSlotTime;
@@ -320,11 +371,14 @@ export default function AddBookingScreen({ navigation, route }) {
         staff_member_name: selectedStaff?.name || null,
         staff_member_role: selectedStaff?.role || null,
         staff_member_color: selectedStaff?.color || null,
+        notification_hooks: {
+          confirmed_sms: 'pending',
+        },
       },
     };
 
     if (isEditing) {
-      const { error } = await updateBooking(bookingToEdit.id, payload);
+      const { error, data } = await updateBooking(bookingToEdit.id, payload);
       setIsSaving(false);
 
       if (error) {
@@ -333,9 +387,27 @@ export default function AddBookingScreen({ navigation, route }) {
         return;
       }
 
+      await Promise.all(
+        aiRecommendations.map((recommendation) => {
+          const wasAccepted = isRecommendationAccepted(recommendation);
+
+          return logAiRecommendation({
+            recommendationType: recommendation.type,
+            accepted: wasAccepted,
+            bookingId: data?.id || bookingToEdit.id,
+            reasoningMetadata: {
+              ...recommendation.reasoning,
+              flow: isEditing ? 'edit_booking' : 'new_booking',
+              selected_slot_time: selectedSlotTime,
+              selected_staff_id: selectedStaff?.id || null,
+            },
+          });
+        })
+      );
+
       Alert.alert('Booking updated', 'Your booking details were updated.');
     } else {
-      const { error } = await addBooking({ ...payload, status: 'confirmed' });
+      const { error, data } = await addBooking({ ...payload, status: 'confirmed' });
       setIsSaving(false);
 
       if (error) {
@@ -343,6 +415,24 @@ export default function AddBookingScreen({ navigation, route }) {
         Alert.alert('Save failed', error.message);
         return;
       }
+
+      await Promise.all(
+        aiRecommendations.map((recommendation) => {
+          const wasAccepted = isRecommendationAccepted(recommendation);
+
+          return logAiRecommendation({
+            recommendationType: recommendation.type,
+            accepted: wasAccepted,
+            bookingId: data?.id || null,
+            reasoningMetadata: {
+              ...recommendation.reasoning,
+              flow: isEditing ? 'edit_booking' : 'new_booking',
+              selected_slot_time: selectedSlotTime,
+              selected_staff_id: selectedStaff?.id || null,
+            },
+          });
+        })
+      );
 
       Alert.alert('Booking saved', 'Your new booking has been added.');
     }
@@ -533,6 +623,83 @@ export default function AddBookingScreen({ navigation, route }) {
                 );
               })}
             </ScrollView>
+          </View>
+
+          <View
+            style={{
+              backgroundColor: '#13131C',
+              borderRadius: 14,
+              borderWidth: 1,
+              borderColor: '#2E2A45',
+              padding: 14,
+              marginBottom: 14,
+            }}
+          >
+            <Text
+              style={{
+                color: COLORS.textPrimary,
+                fontSize: 15,
+                fontWeight: '700',
+                marginBottom: 4,
+              }}
+            >
+              AI Scheduling Suggestions
+            </Text>
+            <Text style={{ color: COLORS.textSecondary, fontSize: 12, marginBottom: 10 }}>
+              Deterministic recommendations using availability, workload, and open slots.
+            </Text>
+
+            {aiRecommendations.length ? (
+              aiRecommendations.map((suggestion) => {
+                const isActive = selectedRecommendationType === suggestion.type;
+                return (
+                  <View
+                    key={suggestion.type}
+                    style={{
+                      backgroundColor: isActive ? '#241A3C' : '#161622',
+                      borderColor: isActive ? COLORS.accent : '#2D2D38',
+                      borderWidth: 1,
+                      borderRadius: 12,
+                      padding: 12,
+                      marginBottom: 8,
+                    }}
+                  >
+                    <Text style={{ color: COLORS.textPrimary, fontWeight: '700' }}>
+                      {suggestion.title}
+                    </Text>
+                    <Text style={{ color: COLORS.textSecondary, marginTop: 4, fontSize: 12 }}>
+                      {suggestion.subtitle}
+                    </Text>
+                    <Text style={{ color: '#DDD6FE', marginTop: 6, fontWeight: '700' }}>
+                      {suggestion.slotLabel}
+                      {suggestion.staffName ? ` • ${suggestion.staffName}` : ''}
+                    </Text>
+
+                    <TouchableOpacity
+                      onPress={() => onApplySuggestion(suggestion)}
+                      style={{
+                        marginTop: 10,
+                        alignSelf: 'flex-start',
+                        backgroundColor: isActive ? COLORS.accent : '#1F1F2C',
+                        borderRadius: 10,
+                        borderWidth: 1,
+                        borderColor: isActive ? '#8B5CF6' : '#323245',
+                        paddingHorizontal: 12,
+                        paddingVertical: 8,
+                      }}
+                    >
+                      <Text style={{ color: COLORS.textPrimary, fontSize: 12, fontWeight: '700' }}>
+                        {isActive ? 'Applied' : 'Apply Suggestion'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                );
+              })
+            ) : (
+              <Text style={{ color: '#71717A', fontSize: 12 }}>
+                Suggestions will appear once date, service duration, and slots are available.
+              </Text>
+            )}
           </View>
 
           <Field
