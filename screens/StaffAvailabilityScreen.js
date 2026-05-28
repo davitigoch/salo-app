@@ -12,7 +12,7 @@ import {
   WEEKDAY_LABELS,
 } from '../constants/availability';
 import { COLORS } from '../constants/colors';
-import { useAuth } from '../context/AuthContext';
+import { useStaff } from '../context/StaffContext';
 
 function timeStringToDate(value) {
   const [hours, minutes] = String(value || '09:00').split(':').map((part) => Number(part));
@@ -25,57 +25,59 @@ function dateToTimeString(value) {
   return `${String(value.getHours()).padStart(2, '0')}:${String(value.getMinutes()).padStart(2, '0')}`;
 }
 
-export default function BusinessHoursScreen({ navigation }) {
+export default function StaffAvailabilityScreen({ navigation, route }) {
+  const staffId = route?.params?.staffId;
   const {
-    businessHours,
-    isBusinessHoursLoading,
-    businessHoursError,
-    saveBusinessHours,
-  } = useAuth();
+    staff,
+    staffAvailability,
+    isStaffAvailabilityLoading,
+    staffAvailabilityError,
+    saveStaffAvailability,
+  } = useStaff();
 
-  const normalizedHours = useMemo(
-    () => normalizeBusinessHours(businessHours),
-    [businessHours]
+  const selectedStaff = useMemo(
+    () => staff.find((member) => member.id === staffId),
+    [staff, staffId]
   );
 
-  const [draftHours, setDraftHours] = useState(normalizedHours);
+  const normalizedRows = useMemo(() => {
+    const matching = (staffAvailability || []).filter((row) => row.staff_member_id === staffId);
+    return normalizeBusinessHours(matching);
+  }, [staffAvailability, staffId]);
+
+  const [draftRows, setDraftRows] = useState(normalizedRows);
   const [isSaving, setIsSaving] = useState(false);
   const [pickerState, setPickerState] = useState(null);
 
   useEffect(() => {
-    setDraftHours(normalizedHours);
-  }, [normalizedHours]);
+    setDraftRows(normalizedRows);
+  }, [normalizedRows]);
 
   const updateDay = (weekday, updates) => {
-    setDraftHours((previous) =>
-      previous.map((item) =>
-        item.weekday === weekday
-          ? { ...item, ...updates }
-          : item
-      )
+    setDraftRows((previous) =>
+      previous.map((row) => (row.weekday === weekday ? { ...row, ...updates } : row))
     );
   };
 
   const onSave = async () => {
-    for (const day of draftHours) {
+    for (const day of draftRows) {
       if (day.is_closed) {
         continue;
       }
 
       const open = timeToMinutes(day.open_time);
       const close = timeToMinutes(day.close_time);
-
       if (open === null || close === null || close <= open) {
         Alert.alert(
           'Invalid hours',
-          `${WEEKDAY_LABELS[day.weekday]} requires a close time later than open time.`
+          `${WEEKDAY_LABELS[day.weekday]} requires close time later than open time.`
         );
         return;
       }
     }
 
     setIsSaving(true);
-    const { error } = await saveBusinessHours(draftHours);
+    const { error } = await saveStaffAvailability(staffId, draftRows);
     setIsSaving(false);
 
     if (error) {
@@ -83,7 +85,7 @@ export default function BusinessHoursScreen({ navigation }) {
       return;
     }
 
-    Alert.alert('Saved', 'Business hours have been updated.');
+    Alert.alert('Saved', 'Staff availability updated.');
   };
 
   const pickerValue = useMemo(() => {
@@ -91,9 +93,9 @@ export default function BusinessHoursScreen({ navigation }) {
       return new Date();
     }
 
-    const row = draftHours.find((item) => item.weekday === pickerState.weekday);
+    const row = draftRows.find((item) => item.weekday === pickerState.weekday);
     return timeStringToDate(row?.[pickerState.field]);
-  }, [draftHours, pickerState]);
+  }, [draftRows, pickerState]);
 
   return (
     <ScreenContainer style={{ paddingTop: 0 }}>
@@ -106,37 +108,27 @@ export default function BusinessHoursScreen({ navigation }) {
         }}
         showsVerticalScrollIndicator={false}
       >
-        <Text
-          style={{
-            color: COLORS.textPrimary,
-            fontSize: 30,
-            fontWeight: '700',
-          }}
-        >
-          Business Hours
+        <Text style={{ color: COLORS.textPrimary, fontSize: 30, fontWeight: '700' }}>
+          Staff Availability
         </Text>
 
-        <Text
-          style={{
-            color: COLORS.textSecondary,
-            marginTop: 8,
-            marginBottom: 18,
-          }}
-        >
-          Control weekly availability for booking and scheduling.
+        <Text style={{ color: COLORS.textSecondary, marginTop: 8, marginBottom: 18 }}>
+          {selectedStaff?.name
+            ? `${selectedStaff.name} weekly schedule`
+            : 'Set weekly schedule for this team member'}
         </Text>
 
-        {isBusinessHoursLoading ? (
+        {isStaffAvailabilityLoading ? (
           <Text style={{ color: COLORS.textSecondary, marginBottom: 12 }}>
-            Loading business hours...
+            Loading availability...
           </Text>
         ) : null}
 
-        {businessHoursError ? (
-          <Text style={{ color: '#FCA5A5', marginBottom: 12 }}>{businessHoursError}</Text>
+        {staffAvailabilityError ? (
+          <Text style={{ color: '#FCA5A5', marginBottom: 12 }}>{staffAvailabilityError}</Text>
         ) : null}
 
-        {draftHours.map((day) => (
+        {draftRows.map((day) => (
           <View
             key={day.weekday}
             style={{
@@ -148,13 +140,7 @@ export default function BusinessHoursScreen({ navigation }) {
               marginBottom: 12,
             }}
           >
-            <View
-              style={{
-                flexDirection: 'row',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-              }}
-            >
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
               <Text style={{ color: COLORS.textPrimary, fontSize: 17, fontWeight: '700' }}>
                 {WEEKDAY_LABELS[day.weekday]}
               </Text>
@@ -170,16 +156,9 @@ export default function BusinessHoursScreen({ navigation }) {
             </View>
 
             {day.is_closed ? (
-              <Text style={{ color: COLORS.textSecondary, marginTop: 10 }}>
-                Unavailable all day.
-              </Text>
+              <Text style={{ color: COLORS.textSecondary, marginTop: 10 }}>Unavailable all day.</Text>
             ) : (
-              <View
-                style={{
-                  flexDirection: 'row',
-                  marginTop: 12,
-                }}
-              >
+              <View style={{ flexDirection: 'row', marginTop: 12 }}>
                 <TouchableOpacity
                   onPress={() => setPickerState({ weekday: day.weekday, field: 'open_time' })}
                   style={{
@@ -221,7 +200,7 @@ export default function BusinessHoursScreen({ navigation }) {
         ))}
 
         <PrimaryButton
-          title={isSaving ? 'Saving...' : 'Save Availability'}
+          title={isSaving ? 'Saving...' : 'Save Staff Availability'}
           onPress={onSave}
         />
       </ScrollView>

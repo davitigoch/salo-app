@@ -1,6 +1,7 @@
 import React from 'react';
 import { Alert, Text, TouchableOpacity, View } from 'react-native';
 
+import BackButton from '../components/BackButton';
 import PrimaryButton from '../components/PrimaryButton';
 import ScreenContainer from '../components/ScreenContainer';
 import { COLORS } from '../constants/colors';
@@ -34,14 +35,16 @@ export default function ServicesScreen({ navigation }) {
     <ScreenContainer
       style={{
         padding: 24,
-        paddingTop: 70,
+        paddingTop: 0,
       }}
     >
+      <BackButton navigation={navigation} />
       <Text
         style={{
           color: COLORS.textPrimary,
           fontSize: 32,
           fontWeight: '700',
+          paddingTop: 88,
         }}
       >
         Services

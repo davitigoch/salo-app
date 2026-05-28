@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, KeyboardAvoidingView, Platform, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
+import BackButton from '../components/BackButton';
 import PrimaryButton from '../components/PrimaryButton';
 import ScreenContainer from '../components/ScreenContainer';
 import { COLORS } from '../constants/colors';
@@ -139,7 +140,8 @@ export default function AddServiceScreen({ navigation, route }) {
   };
 
   return (
-    <ScreenContainer style={{ paddingTop: 62 }}>
+    <ScreenContainer style={{ paddingTop: 0 }}>
+      <BackButton navigation={navigation} />
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -147,6 +149,7 @@ export default function AddServiceScreen({ navigation, route }) {
         <ScrollView
           contentContainerStyle={{
             paddingHorizontal: 24,
+            paddingTop: 92,
             paddingBottom: 36,
           }}
           showsVerticalScrollIndicator={false}

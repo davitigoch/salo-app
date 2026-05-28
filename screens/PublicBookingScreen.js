@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import {
   Alert,
   KeyboardAvoidingView,
+  Linking,
   Platform,
   ScrollView,
   Text,
@@ -10,6 +11,7 @@ import {
   View,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import * as ExpoLinking from 'expo-linking';
 
 import PrimaryButton from '../components/PrimaryButton';
 import {
@@ -124,6 +126,7 @@ export default function PublicBookingScreen({ route }) {
   const [business, setBusiness] = useState(null);
   const [services, setServices] = useState([]);
   const [staffMembers, setStaffMembers] = useState([]);
+  const [staffAvailability, setStaffAvailability] = useState([]);
   const [businessHours, setBusinessHours] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
@@ -140,6 +143,8 @@ export default function PublicBookingScreen({ route }) {
   const [isSlotsLoading, setIsSlotsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
+  const [checkoutUrl, setCheckoutUrl] = useState('');
+  const [pendingBookingDraft, setPendingBookingDraft] = useState(null);
 
   useEffect(() => {
     async function loadBusiness() {
@@ -154,7 +159,7 @@ export default function PublicBookingScreen({ route }) {
 
       const { data, error: businessError } = await supabase
         .from('businesses')
-        .select('id, owner_user_id, business_name, slug, description, timezone, public_booking_enabled')
+        .select('id, owner_user_id, business_name, slug, description, timezone, public_booking_enabled, deposits_enabled, deposit_percentage, require_card_on_booking')
         .eq('slug', slug)
         .eq('public_booking_enabled', true)
         .single();
@@ -204,6 +209,25 @@ export default function PublicBookingScreen({ route }) {
         return;
       }
 
+      const { data: staffAvailabilityData, error: staffAvailabilityError } = await supabase.rpc(
+        'get_public_staff_availability',
+        {
+          target_business_id: data.id,
+        }
+      );
+
+      if (staffAvailabilityError) {
+        setError('Staff availability is currently unavailable.');
+        setBusiness(data);
+        setServices(availableServices);
+        setStaffMembers(Array.isArray(staffData) ? staffData : []);
+        setStaffAvailability([]);
+        setBusinessHours([]);
+        setSelectedService(availableServices.length ? availableServices[0] : null);
+        setIsLoading(false);
+        return;
+      }
+
       const { data: hoursData, error: hoursError } = await supabase
         .from('business_hours')
         .select('weekday, is_closed, open_time, close_time')
@@ -223,6 +247,7 @@ export default function PublicBookingScreen({ route }) {
       setBusiness(data);
       setServices(availableServices);
       setStaffMembers(Array.isArray(staffData) ? staffData : []);
+      setStaffAvailability(Array.isArray(staffAvailabilityData) ? staffAvailabilityData : []);
       setBusinessHours(Array.isArray(hoursData) ? hoursData : []);
       setSelectedService(availableServices.length ? availableServices[0] : null);
       setIsLoading(false);
@@ -255,6 +280,7 @@ export default function PublicBookingScreen({ route }) {
         (data || []).map((item) => ({
           id: item.id,
           time: item.booking_time,
+          staff_member_id: item.staff_member_id,
           booking_metadata: {
             service_duration_minutes: item.duration_minutes,
           },
@@ -271,6 +297,9 @@ export default function PublicBookingScreen({ route }) {
     date: dateValue,
     serviceDurationMinutes: Number(selectedService?.duration_minutes || 0),
     existingBookings: bookedSlots,
+    staffMembers,
+    selectedStaffId,
+    staffAvailability,
     stepMinutes: 15,
   });
 
@@ -286,6 +315,110 @@ export default function PublicBookingScreen({ route }) {
   }, [selectedSlotTime, slotsResult.slots]);
 
   const selectedStaff = staffMembers.find((member) => member.id === selectedStaffId) || null;
+
+  const resetBookingForm = () => {
+    setClientName('');
+    setEmail('');
+    setPhone('');
+    setNotes('');
+  };
+
+  const appendLocalBookedSlot = () => {
+    setBookedSlots((previous) => [
+      ...previous,
+      {
+        id: `local-${Date.now()}`,
+        time: selectedSlotTime,
+        staff_member_id: selectedStaff?.id || null,
+        booking_metadata: {
+          service_duration_minutes: selectedService?.duration_minutes,
+        },
+      },
+    ]);
+  };
+
+  const createPublicBookingWithoutPayment = async (payload) => {
+    const { error: insertError } = await supabase.from('bookings').insert(payload);
+
+    if (insertError) {
+      return { error: insertError };
+    }
+
+    return { error: null };
+  };
+
+  useEffect(() => {
+    const handleIncomingLink = async (incomingUrl) => {
+      const parsed = ExpoLinking.parse(incomingUrl || '');
+      const path = String(parsed.path || '');
+
+      if (path !== 'public-booking-payment') {
+        return;
+      }
+
+      const status = String(parsed.queryParams?.status || '');
+      const sessionId = String(parsed.queryParams?.session_id || '');
+
+      if (status === 'cancel') {
+        setIsSubmitting(false);
+        Alert.alert('Payment canceled', 'You can resume checkout when ready.');
+        return;
+      }
+
+      if (status !== 'success' || !sessionId) {
+        return;
+      }
+
+      if (!pendingBookingDraft) {
+        Alert.alert('Payment received', 'Unable to find your pending booking details. Please try again.');
+        return;
+      }
+
+      setIsSubmitting(true);
+
+      const { data, error: finalizeError } = await supabase.functions.invoke(
+        'finalize-public-booking-payment',
+        {
+          body: {
+            checkoutSessionId: sessionId,
+            bookingDraft: pendingBookingDraft,
+          },
+        }
+      );
+
+      setIsSubmitting(false);
+
+      if (finalizeError) {
+        Alert.alert('Finalize failed', finalizeError.message);
+        return;
+      }
+
+      if (data?.error) {
+        Alert.alert('Finalize failed', data.error);
+        return;
+      }
+
+      setSuccessMessage('Payment received and booking confirmed. See you soon.');
+      setPendingBookingDraft(null);
+      setCheckoutUrl('');
+      resetBookingForm();
+      appendLocalBookedSlot();
+    };
+
+    const subscription = Linking.addEventListener('url', ({ url }) => {
+      handleIncomingLink(url);
+    });
+
+    Linking.getInitialURL().then((initialUrl) => {
+      if (initialUrl) {
+        handleIncomingLink(initialUrl);
+      }
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [pendingBookingDraft, selectedService?.duration_minutes, selectedSlotTime, selectedStaff?.id]);
 
   const onSubmit = async () => {
     if (!business) {
@@ -306,7 +439,7 @@ export default function PublicBookingScreen({ route }) {
     setIsSubmitting(true);
     setSuccessMessage('');
 
-    const payload = {
+    const basePayload = {
       client_name: clientName.trim(),
       service: selectedService.name,
       price: Number(selectedService.price || 0),
@@ -320,6 +453,7 @@ export default function PublicBookingScreen({ route }) {
       business_id: business.id,
       business_slug: business.slug,
       booking_source: 'public',
+      status: 'pending',
       booking_metadata: {
         service_id: selectedService.id,
         service_name: selectedService.name,
@@ -332,30 +466,97 @@ export default function PublicBookingScreen({ route }) {
       },
     };
 
-    const { error: insertError } = await supabase.from('bookings').insert(payload);
+    const paymentRequired = Boolean(
+      business?.deposits_enabled || business?.require_card_on_booking
+    );
 
-    setIsSubmitting(false);
+    if (!paymentRequired) {
+      const { error: insertError } = await createPublicBookingWithoutPayment(basePayload);
 
-    if (insertError) {
-      Alert.alert('Booking failed', insertError.message);
+      setIsSubmitting(false);
+
+      if (insertError) {
+        Alert.alert('Booking failed', insertError.message);
+        return;
+      }
+
+      setSuccessMessage('Your appointment has been requested. We will confirm it shortly.');
+      resetBookingForm();
+      appendLocalBookedSlot();
       return;
     }
 
-    setSuccessMessage('Your appointment has been requested. We will confirm it shortly.');
-    setClientName('');
-    setEmail('');
-    setPhone('');
-    setNotes('');
-    setBookedSlots((previous) => [
-      ...previous,
+    const callbackBaseUrl = ExpoLinking.createURL('public-booking-payment');
+    const successUrl = `${callbackBaseUrl}?status=success&session_id={CHECKOUT_SESSION_ID}`;
+    const cancelUrl = `${callbackBaseUrl}?status=cancel`;
+
+    const { data: checkoutData, error: checkoutError } = await supabase.functions.invoke(
+      'create-stripe-checkout-session',
       {
-        id: `local-${Date.now()}`,
-        time: selectedSlotTime,
-        booking_metadata: {
-          service_duration_minutes: selectedService.duration_minutes,
+        body: {
+          businessId: business.id,
+          serviceId: selectedService.id,
+          clientName: clientName.trim(),
+          customerEmail: email.trim(),
+          paymentMode: business.deposits_enabled ? 'auto' : 'full',
+          successUrl,
+          cancelUrl,
         },
-      },
-    ]);
+      }
+    );
+
+    if (checkoutError) {
+      setIsSubmitting(false);
+      Alert.alert('Payment init failed', checkoutError.message);
+      return;
+    }
+
+    if (checkoutData?.error) {
+      setIsSubmitting(false);
+      Alert.alert('Payment init failed', checkoutData.error);
+      return;
+    }
+
+    if (!checkoutData?.requiresPayment || !checkoutData?.checkoutUrl) {
+      const { error: insertError } = await createPublicBookingWithoutPayment(basePayload);
+
+      setIsSubmitting(false);
+
+      if (insertError) {
+        Alert.alert('Booking failed', insertError.message);
+        return;
+      }
+
+      setSuccessMessage('Your appointment has been requested. We will confirm it shortly.');
+      resetBookingForm();
+      appendLocalBookedSlot();
+      return;
+    }
+
+    setPendingBookingDraft({
+      client_name: clientName.trim(),
+      date: formatDateValue(dateValue),
+      time: selectedSlotTime,
+      notes: notes.trim(),
+      customer_email: email.trim(),
+      customer_phone: phone.trim(),
+      staff_member_id: selectedStaff?.id || null,
+      business_id: business.id,
+      business_slug: business.slug,
+      service_id: selectedService.id,
+    });
+    setCheckoutUrl(checkoutData.checkoutUrl);
+
+    const canOpen = await Linking.canOpenURL(checkoutData.checkoutUrl);
+
+    setIsSubmitting(false);
+
+    if (!canOpen) {
+      Alert.alert('Checkout unavailable', 'Unable to open Stripe Checkout on this device.');
+      return;
+    }
+
+    await Linking.openURL(checkoutData.checkoutUrl);
   };
 
   if (isLoading) {
@@ -494,6 +695,29 @@ export default function PublicBookingScreen({ route }) {
               }}
             >
               <Text style={{ color: '#BBF7D0' }}>{successMessage}</Text>
+            </View>
+          ) : null}
+
+          {checkoutUrl ? (
+            <View
+              style={{
+                backgroundColor: '#111827',
+                borderColor: '#1E3A8A',
+                borderWidth: 1,
+                borderRadius: 16,
+                padding: 14,
+                marginBottom: 16,
+              }}
+            >
+              <Text style={{ color: '#BFDBFE', marginBottom: 10 }}>
+                Payment in progress. If Checkout did not open, tap below.
+              </Text>
+              <PrimaryButton
+                title="Open Checkout"
+                onPress={() => {
+                  Linking.openURL(checkoutUrl);
+                }}
+              />
             </View>
           ) : null}
 
@@ -687,7 +911,13 @@ export default function PublicBookingScreen({ route }) {
           />
 
           <PrimaryButton
-            title={isSubmitting ? 'Booking...' : 'Confirm Booking'}
+            title={
+              isSubmitting
+                ? 'Processing...'
+                : business?.deposits_enabled || business?.require_card_on_booking
+                  ? 'Continue to Payment'
+                  : 'Confirm Booking'
+            }
             onPress={onSubmit}
           />
         </ScrollView>

@@ -10,6 +10,7 @@ import {
   View,
 } from 'react-native';
 
+import BackButton from '../components/BackButton';
 import PrimaryButton from '../components/PrimaryButton';
 import ScreenContainer from '../components/ScreenContainer';
 import { COLORS } from '../constants/colors';
@@ -137,7 +138,8 @@ export default function AddStaffScreen({ navigation, route }) {
   };
 
   return (
-    <ScreenContainer style={{ paddingTop: 62 }}>
+    <ScreenContainer style={{ paddingTop: 0 }}>
+      <BackButton navigation={navigation} />
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -145,6 +147,7 @@ export default function AddStaffScreen({ navigation, route }) {
         <ScrollView
           contentContainerStyle={{
             paddingHorizontal: 24,
+            paddingTop: 92,
             paddingBottom: 36,
           }}
           showsVerticalScrollIndicator={false}
@@ -257,6 +260,18 @@ export default function AddStaffScreen({ navigation, route }) {
             }
             onPress={onSave}
           />
+
+          {isEditing ? (
+            <PrimaryButton
+              title="Edit Availability"
+              onPress={() =>
+                navigation.navigate(ROUTES.StaffAvailability, {
+                  staffId: staffToEdit.id,
+                })
+              }
+              style={{ marginTop: 10 }}
+            />
+          ) : null}
         </ScrollView>
       </KeyboardAvoidingView>
     </ScreenContainer>

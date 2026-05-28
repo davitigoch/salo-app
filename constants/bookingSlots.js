@@ -78,9 +78,42 @@ export function buildBookedIntervals(bookings, excludeBookingId) {
         id: booking.id,
         startMinutes,
         endMinutes: startMinutes + duration,
+        staffMemberId: booking?.staff_member_id || booking?.booking_metadata?.staff_member_id || null,
       };
     })
     .filter(Boolean);
+}
+
+function normalizeStaffAvailability(rows) {
+  return (rows || []).map((row) => ({
+    staff_member_id: row.staff_member_id,
+    weekday: row.weekday,
+    is_closed: Boolean(row.is_closed),
+    open_time: row.open_time,
+    close_time: row.close_time,
+  }));
+}
+
+function getStaffDayRule(staffAvailability, staffId, weekday) {
+  return normalizeStaffAvailability(staffAvailability).find(
+    (row) => row.staff_member_id === staffId && row.weekday === weekday
+  );
+}
+
+function isStaffSlotAvailable({
+  staffId,
+  startMinutes,
+  endMinutes,
+  intervals,
+}) {
+  const overlaps = intervals.some((interval) => {
+    const blocksThisStaff = interval.staffMemberId === null || interval.staffMemberId === staffId;
+    return blocksThisStaff
+      && startMinutes < interval.endMinutes
+      && endMinutes > interval.startMinutes;
+  });
+
+  return !overlaps;
 }
 
 export function generateAvailableTimeSlots({
@@ -88,6 +121,9 @@ export function generateAvailableTimeSlots({
   date,
   serviceDurationMinutes,
   existingBookings,
+  staffMembers = [],
+  selectedStaffId,
+  staffAvailability = [],
   stepMinutes = 15,
   excludeBookingId,
 }) {
@@ -129,16 +165,59 @@ export function generateAvailableTimeSlots({
   }
 
   const intervals = buildBookedIntervals(existingBookings, excludeBookingId);
+
+  const activeStaff = (staffMembers || []).filter((member) => member.is_active !== false);
+  const candidateStaffIds = selectedStaffId
+    ? [selectedStaffId]
+    : activeStaff.map((member) => member.id);
+
+  if (!candidateStaffIds.length) {
+    return {
+      slots: [],
+      reason: 'No active team members are available for booking.',
+    };
+  }
+
   const slots = [];
 
   for (let startMinutes = openMinutes; startMinutes + duration <= closeMinutes; startMinutes += stepMinutes) {
     const endMinutes = startMinutes + duration;
 
-    const overlaps = intervals.some((interval) =>
-      startMinutes < interval.endMinutes && endMinutes > interval.startMinutes
-    );
+    const isCoveredByStaff = candidateStaffIds.some((staffId) => {
+      const staffRule = getStaffDayRule(staffAvailability, staffId, weekday);
 
-    if (!overlaps) {
+      let staffOpen = openMinutes;
+      let staffClose = closeMinutes;
+
+      if (staffRule) {
+        if (staffRule.is_closed) {
+          return false;
+        }
+
+        const parsedOpen = parseTimeToMinutes(staffRule.open_time);
+        const parsedClose = parseTimeToMinutes(staffRule.close_time);
+
+        if (parsedOpen === null || parsedClose === null || parsedClose <= parsedOpen) {
+          return false;
+        }
+
+        staffOpen = Math.max(openMinutes, parsedOpen);
+        staffClose = Math.min(closeMinutes, parsedClose);
+      }
+
+      if (startMinutes < staffOpen || endMinutes > staffClose) {
+        return false;
+      }
+
+      return isStaffSlotAvailable({
+        staffId,
+        startMinutes,
+        endMinutes,
+        intervals,
+      });
+    });
+
+    if (isCoveredByStaff) {
       const value = minutesToTimeString(startMinutes);
       slots.push({
         value,
@@ -150,7 +229,9 @@ export function generateAvailableTimeSlots({
   if (!slots.length) {
     return {
       slots: [],
-      reason: 'No available time slots for this date. Try another date.',
+      reason: selectedStaffId
+        ? 'Selected team member has no available slots for this date.'
+        : 'No available team slots for this date. Try another date.',
     };
   }
 

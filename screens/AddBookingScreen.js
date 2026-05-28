@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 
+import BackButton from '../components/BackButton';
 import PrimaryButton from '../components/PrimaryButton';
 import {
   formatDateValue,
@@ -137,7 +138,7 @@ export default function AddBookingScreen({ navigation, route }) {
     servicesError,
     fetchServices,
   } = useServices();
-  const { staff } = useStaff();
+  const { staff, staffAvailability } = useStaff();
   const bookingId = route?.params?.bookingId;
   const bookingToEdit = useMemo(
     () => bookings.find((booking) => booking.id === bookingId),
@@ -200,7 +201,11 @@ export default function AddBookingScreen({ navigation, route }) {
   );
 
   const existingBookingsForDate = useMemo(
-    () => bookings.filter((booking) => booking.date === formatDateValue(dateValue)),
+    () => bookings.filter(
+      (booking) =>
+        booking.date === formatDateValue(dateValue)
+        && (booking.status || 'confirmed') !== 'cancelled'
+    ),
     [bookings, dateValue]
   );
 
@@ -209,6 +214,9 @@ export default function AddBookingScreen({ navigation, route }) {
     date: dateValue,
     serviceDurationMinutes,
     existingBookings: existingBookingsForDate,
+    staffMembers: activeStaff,
+    selectedStaffId,
+    staffAvailability,
     stepMinutes: 15,
     excludeBookingId: bookingToEdit?.id,
   });
@@ -327,7 +335,7 @@ export default function AddBookingScreen({ navigation, route }) {
 
       Alert.alert('Booking updated', 'Your booking details were updated.');
     } else {
-      const { error } = await addBooking(payload);
+      const { error } = await addBooking({ ...payload, status: 'confirmed' });
       setIsSaving(false);
 
       if (error) {
@@ -345,7 +353,8 @@ export default function AddBookingScreen({ navigation, route }) {
   };
 
   return (
-    <ScreenContainer style={{ paddingTop: 62 }}>
+    <ScreenContainer style={{ paddingTop: 0 }}>
+      <BackButton navigation={navigation} />
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -353,6 +362,7 @@ export default function AddBookingScreen({ navigation, route }) {
         <ScrollView
           contentContainerStyle={{
             paddingHorizontal: 24,
+            paddingTop: 92,
             paddingBottom: 36,
           }}
           showsVerticalScrollIndicator={false}

@@ -1,6 +1,7 @@
 import React from 'react';
 import { Alert, Text, TouchableOpacity, View } from 'react-native';
 
+import BackButton from '../components/BackButton';
 import PrimaryButton from '../components/PrimaryButton';
 import ScreenContainer from '../components/ScreenContainer';
 import { COLORS } from '../constants/colors';
@@ -32,12 +33,14 @@ export default function StaffScreen({ navigation }) {
   };
 
   return (
-    <ScreenContainer style={{ padding: 24, paddingTop: 70 }}>
+    <ScreenContainer style={{ padding: 24, paddingTop: 0 }}>
+      <BackButton navigation={navigation} />
       <Text
         style={{
           color: COLORS.textPrimary,
           fontSize: 32,
           fontWeight: '700',
+          paddingTop: 88,
         }}
       >
         Team
@@ -128,6 +131,25 @@ export default function StaffScreen({ navigation }) {
               }}
             >
               <Text style={{ color: COLORS.textPrimary, fontWeight: '600' }}>Edit</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() =>
+                navigation.navigate(ROUTES.StaffAvailability, {
+                  staffId: member.id,
+                })
+              }
+              style={{
+                backgroundColor: '#15151B',
+                borderColor: '#2D2D38',
+                borderWidth: 1,
+                borderRadius: 12,
+                paddingHorizontal: 14,
+                paddingVertical: 10,
+                marginRight: 10,
+              }}
+            >
+              <Text style={{ color: COLORS.textPrimary, fontWeight: '600' }}>Availability</Text>
             </TouchableOpacity>
 
             <TouchableOpacity

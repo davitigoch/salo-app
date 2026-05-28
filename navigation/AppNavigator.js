@@ -24,8 +24,12 @@ import ServicesScreen from '../screens/ServicesScreen';
 import AddServiceScreen from '../screens/AddServiceScreen';
 import StaffScreen from '../screens/StaffScreen';
 import AddStaffScreen from '../screens/AddStaffScreen';
+import StaffAvailabilityScreen from '../screens/StaffAvailabilityScreen';
 import BusinessHoursScreen from '../screens/BusinessHoursScreen';
 import WeeklyCalendarScreen from '../screens/WeeklyCalendarScreen';
+import DailyScheduleScreen from '../screens/DailyScheduleScreen';
+import PaymentSettingsScreen from '../screens/PaymentSettingsScreen';
+import NotificationSettingsScreen from '../screens/NotificationSettingsScreen';
 import PublicBookingScreen from '../screens/PublicBookingScreen';
 import MainTabNavigator from './MainTabNavigator';
 
@@ -43,8 +47,12 @@ const linking = {
       AddService: 'service/new',
       Staff: 'team',
       AddStaff: 'team/new',
+      StaffAvailability: 'team/availability',
       BusinessHours: 'hours',
       WeeklyCalendar: 'calendar',
+      DailySchedule: 'calendar/day',
+      PaymentSettings: 'settings/payment',
+      NotificationSettings: 'settings/notifications',
     },
   },
 };
@@ -70,6 +78,9 @@ export default function AppNavigator() {
   const [staff, setStaff] = useState([]);
   const [isStaffLoading, setIsStaffLoading] = useState(false);
   const [staffError, setStaffError] = useState('');
+  const [staffAvailability, setStaffAvailability] = useState([]);
+  const [isStaffAvailabilityLoading, setIsStaffAvailabilityLoading] = useState(false);
+  const [staffAvailabilityError, setStaffAvailabilityError] = useState('');
   const [businessHours, setBusinessHours] = useState([]);
   const [isBusinessHoursLoading, setIsBusinessHoursLoading] = useState(false);
   const [businessHoursError, setBusinessHoursError] = useState('');
@@ -117,7 +128,7 @@ export default function AppNavigator() {
 
     const { data, error } = await supabase
       .from('bookings')
-      .select('id, client_name, service, date, time, price, notes, staff_member_id, booking_metadata, user_id, created_at')
+      .select('id, client_name, service, date, time, status, price, notes, staff_member_id, booking_metadata, user_id, created_at')
       .eq('user_id', session.user.id)
       .order('created_at', { ascending: false });
 
@@ -149,7 +160,7 @@ export default function AppNavigator() {
 
     const { data, error } = await supabase
       .from('businesses')
-      .select('id, owner_user_id, business_name, slug, description, timezone, services, public_booking_enabled, created_at')
+      .select('id, owner_user_id, business_name, slug, description, timezone, services, public_booking_enabled, deposits_enabled, deposit_percentage, require_card_on_booking, stripe_account_id, stripe_charges_enabled, stripe_payouts_enabled, created_at')
       .eq('owner_user_id', session.user.id)
       .order('created_at', { ascending: true });
 
@@ -183,7 +194,7 @@ export default function AppNavigator() {
         description: 'Luxury salon booking experience',
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
       })
-      .select('id, owner_user_id, business_name, slug, description, timezone, services, public_booking_enabled, created_at')
+      .select('id, owner_user_id, business_name, slug, description, timezone, services, public_booking_enabled, deposits_enabled, deposit_percentage, require_card_on_booking, stripe_account_id, stripe_charges_enabled, stripe_payouts_enabled, created_at')
       .single();
 
     if (createError && createError.code === '23505') {
@@ -197,7 +208,7 @@ export default function AppNavigator() {
           description: 'Luxury salon booking experience',
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
         })
-        .select('id, owner_user_id, business_name, slug, description, timezone, services, public_booking_enabled, created_at')
+        .select('id, owner_user_id, business_name, slug, description, timezone, services, public_booking_enabled, deposits_enabled, deposit_percentage, require_card_on_booking, stripe_account_id, stripe_charges_enabled, stripe_payouts_enabled, created_at')
         .single();
 
       createdBusiness = fallbackResult.data;
@@ -313,6 +324,36 @@ export default function AppNavigator() {
     }
 
     await fetchBusinessHours();
+    return { error: null };
+  };
+
+  const saveBusinessPaymentSettings = async (settingsInput) => {
+    if (!business?.id || !session?.user?.id) {
+      return { error: { message: 'Business is not ready yet.' } };
+    }
+
+    setBusinessError('');
+
+    const payload = {
+      deposits_enabled: Boolean(settingsInput?.deposits_enabled),
+      deposit_percentage: Number(settingsInput?.deposit_percentage ?? 0),
+      require_card_on_booking: Boolean(settingsInput?.require_card_on_booking),
+    };
+
+    const { data, error } = await supabase
+      .from('businesses')
+      .update(payload)
+      .eq('id', business.id)
+      .eq('owner_user_id', session.user.id)
+      .select('id, owner_user_id, business_name, slug, description, timezone, services, public_booking_enabled, deposits_enabled, deposit_percentage, require_card_on_booking, stripe_account_id, stripe_charges_enabled, stripe_payouts_enabled, created_at')
+      .single();
+
+    if (error) {
+      setBusinessError(error.message);
+      return { error };
+    }
+
+    setBusiness(data);
     return { error: null };
   };
 
@@ -441,6 +482,38 @@ export default function AppNavigator() {
     fetchStaff();
   }, [fetchStaff]);
 
+  const fetchStaffAvailability = useCallback(async () => {
+    if (!session?.user?.id || !business?.id) {
+      setStaffAvailability([]);
+      return { error: null };
+    }
+
+    setIsStaffAvailabilityLoading(true);
+    setStaffAvailabilityError('');
+
+    const { data, error } = await supabase
+      .from('staff_availability')
+      .select('id, staff_member_id, weekday, is_closed, open_time, close_time, created_at, updated_at')
+      .order('staff_member_id', { ascending: true })
+      .order('weekday', { ascending: true });
+
+    if (error) {
+      setStaffAvailabilityError(error.message);
+      setIsStaffAvailabilityLoading(false);
+      return { error };
+    }
+
+    const staffIds = new Set((staff || []).map((member) => member.id));
+    const rows = Array.isArray(data) ? data : [];
+    setStaffAvailability(rows.filter((row) => staffIds.has(row.staff_member_id)));
+    setIsStaffAvailabilityLoading(false);
+    return { error: null };
+  }, [business?.id, session?.user?.id, staff]);
+
+  useEffect(() => {
+    fetchStaffAvailability();
+  }, [fetchStaffAvailability]);
+
   useEffect(() => {
     if (!business?.id || !session?.user?.id) {
       return undefined;
@@ -494,6 +567,31 @@ export default function AppNavigator() {
   }, [business?.id, fetchStaff, session?.user?.id]);
 
   useEffect(() => {
+    if (!business?.id || !session?.user?.id) {
+      return undefined;
+    }
+
+    const staffAvailabilityChannel = supabase
+      .channel(`staff-availability-changes-${business.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'staff_availability',
+        },
+        () => {
+          fetchStaffAvailability();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(staffAvailabilityChannel);
+    };
+  }, [business?.id, fetchStaffAvailability, session?.user?.id]);
+
+  useEffect(() => {
     if (!session?.user?.id) {
       return undefined;
     }
@@ -534,7 +632,7 @@ export default function AppNavigator() {
     const { data, error } = await supabase
       .from('bookings')
       .insert(payload)
-      .select('id, client_name, service, date, time, price, notes, staff_member_id, booking_metadata, user_id, created_at')
+      .select('id, client_name, service, date, time, status, price, notes, staff_member_id, booking_metadata, user_id, created_at')
       .single();
 
     if (error) {
@@ -558,7 +656,7 @@ export default function AppNavigator() {
       .update(bookingInput)
       .eq('id', bookingId)
       .eq('user_id', session.user.id)
-      .select('id, client_name, service, date, time, price, notes, staff_member_id, booking_metadata, user_id, created_at')
+      .select('id, client_name, service, date, time, status, price, notes, staff_member_id, booking_metadata, user_id, created_at')
       .single();
 
     if (error) {
@@ -829,6 +927,34 @@ export default function AppNavigator() {
     return { error: null };
   };
 
+  const saveStaffAvailability = useCallback(async (staffId, availabilityRows) => {
+    if (!session?.user?.id || !business?.id || !staffId) {
+      return { error: { message: 'Business or staff member is not ready yet.' } };
+    }
+
+    setStaffAvailabilityError('');
+
+    const payload = normalizeBusinessHours(availabilityRows).map((row) => ({
+      staff_member_id: staffId,
+      weekday: row.weekday,
+      is_closed: Boolean(row.is_closed),
+      open_time: row.open_time,
+      close_time: row.close_time,
+    }));
+
+    const { error } = await supabase
+      .from('staff_availability')
+      .upsert(payload, { onConflict: 'staff_member_id,weekday' });
+
+    if (error) {
+      setStaffAvailabilityError(error.message);
+      return { error };
+    }
+
+    await fetchStaffAvailability();
+    return { error: null };
+  }, [business?.id, fetchStaffAvailability, session?.user?.id]);
+
   const signIn = async ({ email, password }) => {
     const { error } = await supabase.auth.signInWithPassword({
       email,
@@ -856,6 +982,7 @@ export default function AppNavigator() {
       setClients([]);
       setServices([]);
       setStaff([]);
+      setStaffAvailability([]);
       setUnauthStartRoute(ROUTES.Login);
     }
     return { error };
@@ -874,6 +1001,7 @@ export default function AppNavigator() {
       businessHoursError,
       fetchBusinessHours,
       saveBusinessHours,
+      saveBusinessPaymentSettings,
       signIn,
       signUp,
       signOut,
@@ -888,6 +1016,7 @@ export default function AppNavigator() {
       isBusinessHoursLoading,
       businessHoursError,
       fetchBusinessHours,
+      saveBusinessPaymentSettings,
     ]
   );
 
@@ -939,8 +1068,23 @@ export default function AppNavigator() {
       addStaffMember,
       updateStaffMember,
       deleteStaffMember,
+      staffAvailability,
+      isStaffAvailabilityLoading,
+      staffAvailabilityError,
+      fetchStaffAvailability,
+      saveStaffAvailability,
     }),
-    [staff, isStaffLoading, staffError, fetchStaff]
+    [
+      staff,
+      isStaffLoading,
+      staffError,
+      fetchStaff,
+      staffAvailability,
+      isStaffAvailabilityLoading,
+      staffAvailabilityError,
+      fetchStaffAvailability,
+      saveStaffAvailability,
+    ]
   );
 
   return (
@@ -1005,12 +1149,28 @@ export default function AppNavigator() {
                         component={AddStaffScreen}
                       />
                       <Stack.Screen
+                        name={ROUTES.StaffAvailability}
+                        component={StaffAvailabilityScreen}
+                      />
+                      <Stack.Screen
                         name={ROUTES.BusinessHours}
                         component={BusinessHoursScreen}
                       />
                       <Stack.Screen
                         name={ROUTES.WeeklyCalendar}
                         component={WeeklyCalendarScreen}
+                      />
+                      <Stack.Screen
+                        name={ROUTES.DailySchedule}
+                        component={DailyScheduleScreen}
+                      />
+                      <Stack.Screen
+                        name={ROUTES.PaymentSettings}
+                        component={PaymentSettingsScreen}
+                      />
+                      <Stack.Screen
+                        name={ROUTES.NotificationSettings}
+                        component={NotificationSettingsScreen}
                       />
                     </>
                   ) : null}

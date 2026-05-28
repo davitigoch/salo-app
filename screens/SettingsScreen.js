@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { Alert, SafeAreaView, ScrollView, View, Text } from 'react-native';
+import React from 'react';
+import { Alert, SafeAreaView, ScrollView, View, Text, TouchableOpacity } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 
 import PrimaryButton from '../components/PrimaryButton';
@@ -7,50 +7,32 @@ import ScreenContainer from '../components/ScreenContainer';
 import { COLORS } from '../constants/colors';
 import { ROUTES } from '../constants/routes';
 import { useAuth } from '../context/AuthContext';
-import { useBookings } from '../context/BookingsContext';
-import {
-  getNotificationPermissionStatus,
-  requestNotificationPermissions,
-  syncBookingReminders,
-} from '../notifications/bookingReminders';
-
-const SETTINGS = ['Business Hours', 'Team Access', 'Notifications'];
+ 
+const SETTINGS = [
+  {
+    title: 'Business Hours',
+    description: 'Control your weekly booking availability.',
+    route: ROUTES.BusinessHours,
+  },
+  {
+    title: 'Manage Team',
+    description: 'Edit staff and working availability.',
+    route: ROUTES.Staff,
+  },
+  {
+    title: 'Notification Settings',
+    description: 'Reminders and booking alert permissions.',
+    route: ROUTES.NotificationSettings,
+  },
+  {
+    title: 'Payment Settings',
+    description: 'Deposits and card requirements.',
+    route: ROUTES.PaymentSettings,
+  },
+];
 
 export default function SettingsScreen({ navigation }) {
   const { signOut, business, isBusinessLoading, businessError } = useAuth();
-  const { bookings } = useBookings();
-  const [notificationStatus, setNotificationStatus] = useState('undetermined');
-  const [isRequestingNotifications, setIsRequestingNotifications] = useState(false);
-
-  useEffect(() => {
-    async function loadStatus() {
-      const status = await getNotificationPermissionStatus();
-      setNotificationStatus(status);
-    }
-
-    loadStatus();
-  }, []);
-
-  const onEnableReminders = async () => {
-    setIsRequestingNotifications(true);
-    const status = await requestNotificationPermissions();
-    setNotificationStatus(status);
-
-    if (status === 'granted') {
-      await syncBookingReminders(bookings);
-      Alert.alert(
-        'Reminders enabled',
-        'You will get local reminders 60 minutes before upcoming appointments.'
-      );
-    } else {
-      Alert.alert(
-        'Permission needed',
-        'Please enable notifications in iOS settings to receive reminders.'
-      );
-    }
-
-    setIsRequestingNotifications(false);
-  };
 
   const onSignOut = async () => {
     const { error } = await signOut();
@@ -108,62 +90,45 @@ export default function SettingsScreen({ navigation }) {
             </Text>
 
             {SETTINGS.map((item) => (
-              <View
-                key={item}
+              <TouchableOpacity
+                key={item.title}
+                onPress={() => navigation.navigate(item.route)}
+                activeOpacity={0.9}
                 style={{
                   backgroundColor: COLORS.card,
                   padding: 18,
                   borderRadius: 18,
                   marginTop: 12,
+                  borderWidth: 1,
+                  borderColor: '#2A2A33',
+                  flexDirection: 'row',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
                 }}
               >
-                <Text
-                  style={{
-                    color: COLORS.textPrimary,
-                    fontSize: 18,
-                    fontWeight: '600',
-                  }}
-                >
-                  {item}
-                </Text>
-              </View>
+                <View style={{ flex: 1, paddingRight: 12 }}>
+                  <Text
+                    style={{
+                      color: COLORS.textPrimary,
+                      fontSize: 18,
+                      fontWeight: '600',
+                    }}
+                  >
+                    {item.title}
+                  </Text>
+                  <Text
+                    style={{
+                      color: COLORS.textSecondary,
+                      marginTop: 4,
+                      lineHeight: 18,
+                    }}
+                  >
+                    {item.description}
+                  </Text>
+                </View>
+                <Text style={{ color: COLORS.accent, fontSize: 18, fontWeight: '700' }}>›</Text>
+              </TouchableOpacity>
             ))}
-
-            <View
-              style={{
-                backgroundColor: COLORS.card,
-                padding: 18,
-                borderRadius: 18,
-                marginTop: 16,
-                borderWidth: 1,
-                borderColor: '#2A2A33',
-              }}
-            >
-              <Text
-                style={{
-                  color: COLORS.textPrimary,
-                  fontSize: 18,
-                  fontWeight: '700',
-                }}
-              >
-                Booking Reminders
-              </Text>
-              <Text
-                style={{
-                  color: COLORS.textSecondary,
-                  marginTop: 6,
-                  marginBottom: 14,
-                  lineHeight: 20,
-                }}
-              >
-                Status: {notificationStatus}. Get local alerts before appointments.
-              </Text>
-
-              <PrimaryButton
-                title={isRequestingNotifications ? 'Checking...' : 'Enable Reminders'}
-                onPress={onEnableReminders}
-              />
-            </View>
 
             <View
               style={{

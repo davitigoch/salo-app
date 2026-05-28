@@ -41,6 +41,10 @@ function getBookingPrice(booking) {
   return parsed;
 }
 
+function isRevenueEligible(booking) {
+  return (booking.status || 'confirmed') !== 'cancelled';
+}
+
 function toDateKey(dateValue) {
   const year = dateValue.getFullYear();
   const month = String(dateValue.getMonth() + 1).padStart(2, '0');
@@ -73,20 +77,20 @@ export default function HomeScreen({ navigation }) {
   const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
 
   const todayRevenue = bookings
-    .filter((booking) => booking.date === todayKey)
+    .filter((booking) => booking.date === todayKey && isRevenueEligible(booking))
     .reduce((sum, booking) => sum + getBookingPrice(booking), 0);
 
   const weeklyRevenue = bookings
     .filter((booking) => {
       const date = parseBookingDateTime(booking);
-      return date && date >= startOfWeek && date < endOfWeek;
+      return date && date >= startOfWeek && date < endOfWeek && isRevenueEligible(booking);
     })
     .reduce((sum, booking) => sum + getBookingPrice(booking), 0);
 
   const monthlyRevenue = bookings
     .filter((booking) => {
       const date = parseBookingDateTime(booking);
-      return date && date >= startOfMonth && date < endOfMonth;
+      return date && date >= startOfMonth && date < endOfMonth && isRevenueEligible(booking);
     })
     .reduce((sum, booking) => sum + getBookingPrice(booking), 0);
 
