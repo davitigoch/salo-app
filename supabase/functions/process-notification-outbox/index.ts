@@ -17,6 +17,7 @@ const SUPPORTED_EVENT_TYPES = [
   'booking.rescheduled',
   'booking.cancelled',
   'booking.reminder_24h',
+  'booking.reminder_2h',
 ];
 
 type OutboxRow = {
@@ -51,7 +52,10 @@ function buildSubject(eventType: string, service: string) {
     return `Appointment cancelled: ${service}`;
   }
   if (eventType === 'booking.reminder_24h') {
-    return `Appointment reminder (24h): ${service}`;
+    return `Reminder: appointment tomorrow for ${service}`;
+  }
+  if (eventType === 'booking.reminder_2h') {
+    return `Reminder: appointment in 2 hours for ${service}`;
   }
 
   return `Booking update: ${service}`;
@@ -102,6 +106,9 @@ function buildHtmlEmail(eventType: string, payload: Record<string, unknown>) {
   } else if (eventType === 'booking.reminder_24h') {
     title = 'Reminder: your appointment is in 24 hours';
     helperText = 'This is a friendly reminder for your upcoming visit.';
+  } else if (eventType === 'booking.reminder_2h') {
+    title = 'Reminder: your appointment starts in 2 hours';
+    helperText = 'Please plan to arrive a few minutes early.';
   }
 
   const secondaryButtonHtml = secondaryButtonLabel
