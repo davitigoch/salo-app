@@ -12,6 +12,7 @@ import {
   View,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import { useNavigation } from '@react-navigation/native';
 import * as ExpoLinking from 'expo-linking';
 import * as Clipboard from 'expo-clipboard';
 
@@ -22,7 +23,12 @@ import {
 } from '../constants/bookingSlots';
 import ScreenContainer from '../components/ScreenContainer';
 import { COLORS } from '../constants/colors';
+import { ROUTES } from '../constants/routes';
 import { supabase } from '../constants/supabase';
+
+const STRIPE_FUNCTION_NAME = 'create-stripe-checkout-session';
+const DISABLE_STRIPE = String(process.env.EXPO_PUBLIC_DISABLE_STRIPE || '').toLowerCase() === 'true';
+const APP_ENV = String(process.env.APP_ENV || '').toLowerCase();
 
 function Field({
   label,
@@ -123,6 +129,34 @@ function parseDateValue(value) {
   return parsed;
 }
 
+function isValidBookingDateText(value) {
+  if (typeof value !== 'string') {
+    return false;
+  }
+
+  const match = value.trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) {
+    return false;
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+
+  if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) {
+    return false;
+  }
+
+  if (year < 2000 || year > 2100) {
+    return false;
+  }
+
+  const parsed = new Date(year, month - 1, day, 0, 0, 0, 0);
+  return parsed.getFullYear() === year
+    && parsed.getMonth() === month - 1
+    && parsed.getDate() === day;
+}
+
 function generateSecureBookingToken() {
   if (globalThis.crypto?.randomUUID) {
     return globalThis.crypto.randomUUID().replace(/-/g, '');
@@ -137,12 +171,190 @@ function generateSecureBookingToken() {
   return `${Date.now().toString(16)}${Math.random().toString(16).slice(2, 14)}`;
 }
 
-function buildManageAppointmentLink(token) {
-  return ExpoLinking.createURL(`appointment/${token}`);
+function getPublicAppointmentUrl(bookingToken) {
+  if (!bookingToken) {
+    return '';
+  }
+
+  if (APP_ENV === 'production') {
+    return `https://salo.app/appointment/${encodeURIComponent(bookingToken)}`;
+  }
+
+  if (APP_ENV === 'development' || __DEV__) {
+    return ExpoLinking.createURL(`appointment/${bookingToken}`);
+  }
+
+  return ExpoLinking.createURL(`appointment/${bookingToken}`);
+}
+
+function parseIsoDateParts(value) {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const match = value.trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) {
+    return null;
+  }
+
+  return {
+    year: Number(match[1]),
+    month: Number(match[2]),
+    day: Number(match[3]),
+  };
+}
+
+function parseTimeParts(value) {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const match = value.trim().match(/^(\d{2}):(\d{2})$/);
+  if (!match) {
+    return null;
+  }
+
+  return {
+    hours: Number(match[1]),
+    minutes: Number(match[2]),
+  };
+}
+
+function formatUtcForCalendar(dateValue) {
+  return dateValue
+    .toISOString()
+    .replace(/[-:]/g, '')
+    .replace(/\.\d{3}/, '');
+}
+
+function formatFloatingForIcs(dateValue) {
+  const year = dateValue.getFullYear();
+  const month = String(dateValue.getMonth() + 1).padStart(2, '0');
+  const day = String(dateValue.getDate()).padStart(2, '0');
+  const hours = String(dateValue.getHours()).padStart(2, '0');
+  const minutes = String(dateValue.getMinutes()).padStart(2, '0');
+  const seconds = String(dateValue.getSeconds()).padStart(2, '0');
+  return `${year}${month}${day}T${hours}${minutes}${seconds}`;
+}
+
+function sanitizeIcsText(value) {
+  return String(value || '')
+    .replace(/\\/g, '\\\\')
+    .replace(/;/g, '\\;')
+    .replace(/,/g, '\\,')
+    .replace(/\r?\n/g, '\\n');
+}
+
+function createIcsEventContent({ uid, summary, description, location, startDate, endDate }) {
+  const lines = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'CALSCALE:GREGORIAN',
+    'PRODID:-//SALO//Public Booking//EN',
+    'BEGIN:VEVENT',
+    `UID:${uid}`,
+    `DTSTAMP:${formatUtcForCalendar(new Date())}`,
+    `DTSTART:${formatFloatingForIcs(startDate)}`,
+    `DTEND:${formatFloatingForIcs(endDate)}`,
+    `SUMMARY:${sanitizeIcsText(summary)}`,
+    `DESCRIPTION:${sanitizeIcsText(description)}`,
+    `LOCATION:${sanitizeIcsText(location)}`,
+    'END:VEVENT',
+    'END:VCALENDAR',
+  ];
+
+  return `${lines.join('\r\n')}\r\n`;
+}
+
+function buildGoogleCalendarLink({ title, description, location, startDate, endDate }) {
+  const query = [
+    ['action', 'TEMPLATE'],
+    ['text', title],
+    ['details', description],
+    ['location', location],
+    ['dates', `${formatUtcForCalendar(startDate)}/${formatUtcForCalendar(endDate)}`],
+  ]
+    .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
+    .join('&');
+
+  return `https://calendar.google.com/calendar/render?${query}`;
+}
+
+function formatSummaryDateTime(dateText, timeText) {
+  const dateParts = parseIsoDateParts(dateText);
+  const timeParts = parseTimeParts(timeText);
+  if (!dateParts || !timeParts) {
+    return `${dateText || 'Unknown date'} at ${timeText || 'Unknown time'}`;
+  }
+
+  const parsed = new Date(
+    dateParts.year,
+    dateParts.month - 1,
+    dateParts.day,
+    timeParts.hours,
+    timeParts.minutes,
+    0,
+    0
+  );
+
+  const formattedDate = parsed.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+  const formattedTime = parsed.toLocaleTimeString(undefined, {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  });
+
+  return `${formattedDate} at ${formattedTime}`;
+}
+
+async function extractEdgeFunctionErrorMessage(checkoutError, checkoutData) {
+  if (checkoutData?.error) {
+    return checkoutData.error;
+  }
+
+  if (!checkoutError) {
+    return 'Unknown payment initialization error.';
+  }
+
+  if (checkoutError?.message && checkoutError.message !== 'Edge Function returned a non-2xx status code') {
+    return checkoutError.message;
+  }
+
+  try {
+    const response = checkoutError?.context;
+    if (response && typeof response.clone === 'function') {
+      const cloned = response.clone();
+      const text = await cloned.text();
+      if (text) {
+        try {
+          const parsed = JSON.parse(text);
+          if (parsed?.error) {
+            return parsed.error;
+          }
+          return text;
+        } catch (_jsonError) {
+          return text;
+        }
+      }
+    }
+  } catch (_contextError) {
+    // Ignore parse failures and fall back below.
+  }
+
+  if (checkoutError?.status === 404 || checkoutError?.context?.status === 404) {
+    return 'Edge Function create-stripe-checkout-session is not deployed.';
+  }
+
+  return checkoutError?.message || 'Edge Function returned a non-2xx status code.';
 }
 
 export default function PublicBookingScreen({ route }) {
-  const slug = route?.params?.slug;
+  const navigation = useNavigation();
+  const businessSlug = route?.params?.businessSlug || route?.params?.slug;
   const [business, setBusiness] = useState(null);
   const [services, setServices] = useState([]);
   const [staffMembers, setStaffMembers] = useState([]);
@@ -164,12 +376,13 @@ export default function PublicBookingScreen({ route }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
   const [manageAppointmentUrl, setManageAppointmentUrl] = useState('');
+  const [successBookingSummary, setSuccessBookingSummary] = useState(null);
   const [checkoutUrl, setCheckoutUrl] = useState('');
   const [pendingBookingDraft, setPendingBookingDraft] = useState(null);
 
   useEffect(() => {
     async function loadBusiness() {
-      if (!slug) {
+      if (!businessSlug) {
         setError('Missing business link.');
         setIsLoading(false);
         return;
@@ -181,7 +394,7 @@ export default function PublicBookingScreen({ route }) {
       const { data, error: businessError } = await supabase
         .from('businesses')
         .select('id, owner_user_id, business_name, slug, description, timezone, public_booking_enabled, deposits_enabled, deposit_percentage, require_card_on_booking')
-        .eq('slug', slug)
+        .eq('slug', businessSlug)
         .eq('public_booking_enabled', true)
         .single();
 
@@ -275,7 +488,79 @@ export default function PublicBookingScreen({ route }) {
     }
 
     loadBusiness();
-  }, [slug]);
+  }, [businessSlug]);
+
+  const onAddToCalendar = async () => {
+    if (!successBookingSummary) {
+      Alert.alert('Calendar unavailable', 'Appointment details are not available yet.');
+      return;
+    }
+
+    const dateParts = parseIsoDateParts(successBookingSummary.date);
+    const timeParts = parseTimeParts(successBookingSummary.time);
+    if (!dateParts || !timeParts) {
+      Alert.alert('Calendar unavailable', 'Appointment date/time is missing or invalid.');
+      return;
+    }
+
+    const duration = Number(successBookingSummary.durationMinutes || 60);
+    const safeDuration = Number.isFinite(duration) && duration > 0 ? duration : 60;
+    const startDate = new Date(
+      dateParts.year,
+      dateParts.month - 1,
+      dateParts.day,
+      timeParts.hours,
+      timeParts.minutes,
+      0,
+      0
+    );
+    const endDate = new Date(startDate.getTime() + safeDuration * 60 * 1000);
+
+    const title = `${successBookingSummary.service} - ${successBookingSummary.businessName}`;
+    const description = [
+      `Service: ${successBookingSummary.service}`,
+      `When: ${formatSummaryDateTime(successBookingSummary.date, successBookingSummary.time)}`,
+      `Duration: ${safeDuration} mins`,
+      `Business: ${successBookingSummary.businessName}`,
+      successBookingSummary.notes ? `Notes: ${successBookingSummary.notes}` : null,
+    ].filter(Boolean).join('\n');
+
+    const googleLink = buildGoogleCalendarLink({
+      title,
+      description,
+      location: successBookingSummary.businessName,
+      startDate,
+      endDate,
+    });
+
+    const icsContent = createIcsEventContent({
+      uid: `${successBookingSummary.bookingToken || Date.now()}@salo.app`,
+      summary: title,
+      description,
+      location: successBookingSummary.businessName,
+      startDate,
+      endDate,
+    });
+
+    try {
+      await Share.share({
+        title: 'Add to Calendar',
+        message: `${title}\n\nGoogle Calendar:\n${googleLink}\n\nICS:\n${icsContent}`,
+      });
+    } catch (shareError) {
+      const fallbackMessage = shareError instanceof Error
+        ? shareError.message
+        : 'Unable to open share sheet.';
+
+      const canOpenGoogle = await Linking.canOpenURL(googleLink);
+      if (canOpenGoogle) {
+        await Linking.openURL(googleLink);
+        return;
+      }
+
+      Alert.alert('Calendar unavailable', fallbackMessage);
+    }
+  };
 
   useEffect(() => {
     async function loadBookedSlots() {
@@ -421,7 +706,7 @@ export default function PublicBookingScreen({ route }) {
 
       const finalizedToken = data?.bookingToken || pendingBookingDraft?.booking_token || '';
       const finalizedStatus = data?.bookingStatus || 'confirmed';
-      const finalizedLink = finalizedToken ? buildManageAppointmentLink(finalizedToken) : '';
+      const finalizedLink = getPublicAppointmentUrl(finalizedToken);
 
       setSuccessMessage(
         finalizedStatus === 'pending'
@@ -429,6 +714,15 @@ export default function PublicBookingScreen({ route }) {
           : 'Your appointment is confirmed.'
       );
       setManageAppointmentUrl(finalizedLink);
+      setSuccessBookingSummary({
+        service: selectedService?.name || 'Appointment',
+        date: pendingBookingDraft?.date || formatDateValue(dateValue),
+        time: pendingBookingDraft?.time || selectedSlotTime,
+        durationMinutes: selectedService?.duration_minutes || 60,
+        businessName: business?.business_name || 'SALO',
+        notes: pendingBookingDraft?.notes || notes,
+        bookingToken: finalizedToken,
+      });
       setPendingBookingDraft(null);
       setCheckoutUrl('');
       resetBookingForm();
@@ -456,8 +750,15 @@ export default function PublicBookingScreen({ route }) {
       return;
     }
 
-    if (!clientName.trim() || !selectedService || !formatDateValue(dateValue) || !selectedSlotTime) {
+    const normalizedDate = formatDateValue(dateValue);
+
+    if (!clientName.trim() || !selectedService || !normalizedDate || !selectedSlotTime) {
       Alert.alert('Missing details', 'Please fill your name and choose a service, date, and time slot.');
+      return;
+    }
+
+    if (!isValidBookingDateText(normalizedDate)) {
+      Alert.alert('Invalid date', 'Please choose a valid appointment date.');
       return;
     }
 
@@ -469,6 +770,7 @@ export default function PublicBookingScreen({ route }) {
     setIsSubmitting(true);
     setSuccessMessage('');
     setManageAppointmentUrl('');
+    setSuccessBookingSummary(null);
 
     const bookingToken = generateSecureBookingToken();
 
@@ -476,7 +778,7 @@ export default function PublicBookingScreen({ route }) {
       client_name: clientName.trim(),
       service: selectedService.name,
       price: Number(selectedService.price || 0),
-      date: formatDateValue(dateValue),
+      date: normalizedDate,
       time: selectedSlotTime,
       notes: notes.trim(),
       customer_email: email.trim(),
@@ -518,7 +820,42 @@ export default function PublicBookingScreen({ route }) {
       }
 
       setSuccessMessage('Your appointment is pending review.');
-      setManageAppointmentUrl(buildManageAppointmentLink(bookingToken));
+      setManageAppointmentUrl(getPublicAppointmentUrl(bookingToken));
+      setSuccessBookingSummary({
+        service: selectedService.name,
+        date: normalizedDate,
+        time: selectedSlotTime,
+        durationMinutes: selectedService.duration_minutes || 60,
+        businessName: business?.business_name || 'SALO',
+        notes: notes.trim(),
+        bookingToken,
+      });
+      resetBookingForm();
+      appendLocalBookedSlot();
+      return;
+    }
+
+    if (DISABLE_STRIPE) {
+      const { error: insertError } = await createPublicBookingWithoutPayment(basePayload);
+
+      setIsSubmitting(false);
+
+      if (insertError) {
+        Alert.alert('Booking failed', insertError.message);
+        return;
+      }
+
+      setSuccessMessage('Your appointment is pending review.');
+      setManageAppointmentUrl(getPublicAppointmentUrl(bookingToken));
+      setSuccessBookingSummary({
+        service: selectedService.name,
+        date: normalizedDate,
+        time: selectedSlotTime,
+        durationMinutes: selectedService.duration_minutes || 60,
+        businessName: business?.business_name || 'SALO',
+        notes: notes.trim(),
+        bookingToken,
+      });
       resetBookingForm();
       appendLocalBookedSlot();
       return;
@@ -528,24 +865,43 @@ export default function PublicBookingScreen({ route }) {
     const successUrl = `${callbackBaseUrl}?status=success&session_id={CHECKOUT_SESSION_ID}`;
     const cancelUrl = `${callbackBaseUrl}?status=cancel`;
 
+    const checkoutPayload = {
+      businessId: business.id,
+      serviceId: selectedService.id,
+      clientName: clientName.trim(),
+      customerEmail: email.trim(),
+      paymentMode: business.deposits_enabled ? 'auto' : 'full',
+      successUrl,
+      cancelUrl,
+    };
+
+    console.log('[PublicBooking] payment init request', {
+      functionName: STRIPE_FUNCTION_NAME,
+      payload: checkoutPayload,
+      env: {
+        EXPO_PUBLIC_DISABLE_STRIPE: process.env.EXPO_PUBLIC_DISABLE_STRIPE || '',
+      },
+    });
+
     const { data: checkoutData, error: checkoutError } = await supabase.functions.invoke(
-      'create-stripe-checkout-session',
+      STRIPE_FUNCTION_NAME,
       {
-        body: {
-          businessId: business.id,
-          serviceId: selectedService.id,
-          clientName: clientName.trim(),
-          customerEmail: email.trim(),
-          paymentMode: business.deposits_enabled ? 'auto' : 'full',
-          successUrl,
-          cancelUrl,
-        },
+        body: checkoutPayload,
       }
     );
 
+    console.log('[PublicBooking] payment init response', {
+      functionName: STRIPE_FUNCTION_NAME,
+      error: checkoutError,
+      data: checkoutData,
+      responseStatus: checkoutError?.context?.status || null,
+    });
+
     if (checkoutError) {
       setIsSubmitting(false);
-      Alert.alert('Payment init failed', checkoutError.message);
+      const detailedMessage = await extractEdgeFunctionErrorMessage(checkoutError, checkoutData);
+      const fallbackMessage = detailedMessage || 'Payments are not configured yet.';
+      Alert.alert('Payment init failed', fallbackMessage);
       return;
     }
 
@@ -566,6 +922,16 @@ export default function PublicBookingScreen({ route }) {
       }
 
       setSuccessMessage('Your appointment has been requested. We will confirm it shortly.');
+      setManageAppointmentUrl(getPublicAppointmentUrl(bookingToken));
+      setSuccessBookingSummary({
+        service: selectedService.name,
+        date: normalizedDate,
+        time: selectedSlotTime,
+        durationMinutes: selectedService.duration_minutes || 60,
+        businessName: business?.business_name || 'SALO',
+        notes: notes.trim(),
+        bookingToken,
+      });
       resetBookingForm();
       appendLocalBookedSlot();
       return;
@@ -573,7 +939,7 @@ export default function PublicBookingScreen({ route }) {
 
     setPendingBookingDraft({
       client_name: clientName.trim(),
-      date: formatDateValue(dateValue),
+      date: normalizedDate,
       time: selectedSlotTime,
       notes: notes.trim(),
       customer_email: email.trim(),
@@ -596,6 +962,15 @@ export default function PublicBookingScreen({ route }) {
     }
 
     await Linking.openURL(checkoutData.checkoutUrl);
+  };
+
+  const onBookAnotherAppointment = () => {
+    setSuccessMessage('');
+    setManageAppointmentUrl('');
+    setSuccessBookingSummary(null);
+    setCheckoutUrl('');
+    setPendingBookingDraft(null);
+    setShowDatePicker(false);
   };
 
   if (isLoading) {
@@ -665,62 +1040,64 @@ export default function PublicBookingScreen({ route }) {
             {business.description || 'Luxury salon booking experience'}
           </Text>
 
-          <View
-            style={{
-              backgroundColor: COLORS.card,
-              borderRadius: 18,
-              padding: 16,
-              marginBottom: 16,
-              borderWidth: 1,
-              borderColor: '#2A2A33',
-            }}
-          >
-            <Text style={{ color: COLORS.textPrimary, fontSize: 18, fontWeight: '700' }}>
-              Services
-            </Text>
-            <Text style={{ color: COLORS.textSecondary, marginTop: 4 }}>
-              Choose your treatment and preferred appointment time.
-            </Text>
-
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ paddingTop: 14 }}
+          {!successMessage ? (
+            <View
+              style={{
+                backgroundColor: COLORS.card,
+                borderRadius: 18,
+                padding: 16,
+                marginBottom: 16,
+                borderWidth: 1,
+                borderColor: '#2A2A33',
+              }}
             >
-              {services.length ? (
-                services.map((service) => {
-                  const isSelected = selectedService?.id === service.id;
-                  return (
-                    <TouchableOpacity
-                      key={service.id}
-                      onPress={() => setSelectedService(service)}
-                      style={{
-                        width: 180,
-                        backgroundColor: isSelected ? '#231B3A' : '#15151B',
-                        borderColor: isSelected ? COLORS.accent : '#2D2D38',
-                        borderWidth: 1,
-                        borderRadius: 16,
-                        padding: 14,
-                        marginRight: 12,
-                      }}
-                    >
-                      <Text style={{ color: COLORS.textPrimary, fontWeight: '700', fontSize: 16 }}>
-                        {service.name}
-                      </Text>
-                      <Text style={{ color: COLORS.textSecondary, marginTop: 6 }}>
-                        {formatCurrency(service.price)}
-                      </Text>
-                      <Text style={{ color: COLORS.textSecondary, marginTop: 4, fontSize: 12 }}>
-                        {service.duration_minutes || 0} mins
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })
-              ) : (
-                <Text style={{ color: COLORS.textSecondary }}>No services available yet.</Text>
-              )}
-            </ScrollView>
-          </View>
+              <Text style={{ color: COLORS.textPrimary, fontSize: 18, fontWeight: '700' }}>
+                Services
+              </Text>
+              <Text style={{ color: COLORS.textSecondary, marginTop: 4 }}>
+                Choose your treatment and preferred appointment time.
+              </Text>
+
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ paddingTop: 14 }}
+              >
+                {services.length ? (
+                  services.map((service, index) => {
+                    const isSelected = selectedService?.id === service.id;
+                    return (
+                      <TouchableOpacity
+                        key={service?.id ? `service-${service.id}` : `service-index-${index}`}
+                        onPress={() => setSelectedService(service)}
+                        style={{
+                          width: 180,
+                          backgroundColor: isSelected ? '#231B3A' : '#15151B',
+                          borderColor: isSelected ? COLORS.accent : '#2D2D38',
+                          borderWidth: 1,
+                          borderRadius: 16,
+                          padding: 14,
+                          marginRight: 12,
+                        }}
+                      >
+                        <Text style={{ color: COLORS.textPrimary, fontWeight: '700', fontSize: 16 }}>
+                          {service.name}
+                        </Text>
+                        <Text style={{ color: COLORS.textSecondary, marginTop: 6 }}>
+                          {formatCurrency(service.price)}
+                        </Text>
+                        <Text style={{ color: COLORS.textSecondary, marginTop: 4, fontSize: 12 }}>
+                          {service.duration_minutes || 0} mins
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })
+                ) : (
+                  <Text style={{ color: COLORS.textSecondary }}>No services available yet.</Text>
+                )}
+              </ScrollView>
+            </View>
+          ) : null}
 
           {successMessage ? (
             <View
@@ -735,18 +1112,53 @@ export default function PublicBookingScreen({ route }) {
             >
               <Text style={{ color: '#BBF7D0' }}>{successMessage}</Text>
 
+              {successBookingSummary ? (
+                <View
+                  style={{
+                    marginTop: 10,
+                    borderTopColor: '#1F4A34',
+                    borderTopWidth: 1,
+                    paddingTop: 10,
+                  }}
+                >
+                  <Text style={{ color: '#DCFCE7', fontWeight: '700' }}>Appointment Summary</Text>
+                  <Text style={{ color: '#BBF7D0', marginTop: 4 }}>
+                    {successBookingSummary.service}
+                  </Text>
+                  <Text style={{ color: '#BBF7D0', marginTop: 2 }}>
+                    {formatSummaryDateTime(successBookingSummary.date, successBookingSummary.time)}
+                  </Text>
+                  <Text style={{ color: '#BBF7D0', marginTop: 2 }}>
+                    Duration: {Number(successBookingSummary.durationMinutes || 0)} mins
+                  </Text>
+                  {successBookingSummary.notes ? (
+                    <Text style={{ color: '#BBF7D0', marginTop: 2 }}>
+                      Notes: {successBookingSummary.notes}
+                    </Text>
+                  ) : null}
+                </View>
+              ) : null}
+
               {manageAppointmentUrl ? (
                 <>
-                  <Text style={{ color: '#C4B5FD', marginTop: 10, fontSize: 12 }}>
-                    Manage Appointment Link
-                  </Text>
-                  <Text style={{ color: '#DDD6FE', marginTop: 4, fontSize: 12 }}>
-                    {manageAppointmentUrl}
-                  </Text>
-
                   <View style={{ flexDirection: 'row', marginTop: 10 }}>
                     <TouchableOpacity
-                      onPress={() => Linking.openURL(manageAppointmentUrl)}
+                      onPress={() => {
+                        const tokenForNavigation = successBookingSummary?.bookingToken || '';
+                        console.log('[PublicBooking] Manage Appointment press', {
+                          bookingToken: tokenForNavigation,
+                          hasToken: Boolean(tokenForNavigation),
+                        });
+
+                        if (tokenForNavigation) {
+                          navigation.navigate(ROUTES.AppointmentPortal, {
+                            bookingToken: tokenForNavigation,
+                          });
+                          return;
+                        }
+
+                        Linking.openURL(manageAppointmentUrl);
+                      }}
                       style={{
                         backgroundColor: '#1E1B4B',
                         borderColor: '#4338CA',
@@ -801,100 +1213,103 @@ export default function PublicBookingScreen({ route }) {
                         Share
                       </Text>
                     </TouchableOpacity>
+
+                    <TouchableOpacity
+                      onPress={onAddToCalendar}
+                      style={{
+                        backgroundColor: '#15151B',
+                        borderColor: '#2D2D38',
+                        borderWidth: 1,
+                        borderRadius: 10,
+                        paddingHorizontal: 12,
+                        paddingVertical: 8,
+                        marginLeft: 8,
+                      }}
+                    >
+                      <Text style={{ color: COLORS.textPrimary, fontSize: 12, fontWeight: '700' }}>
+                        Add to Calendar
+                      </Text>
+                    </TouchableOpacity>
                   </View>
                 </>
               ) : null}
-            </View>
-          ) : null}
 
-          {checkoutUrl ? (
-            <View
-              style={{
-                backgroundColor: '#111827',
-                borderColor: '#1E3A8A',
-                borderWidth: 1,
-                borderRadius: 16,
-                padding: 14,
-                marginBottom: 16,
-              }}
-            >
-              <Text style={{ color: '#BFDBFE', marginBottom: 10 }}>
-                Payment in progress. If Checkout did not open, tap below.
-              </Text>
               <PrimaryButton
-                title="Open Checkout"
-                onPress={() => {
-                  Linking.openURL(checkoutUrl);
-                }}
+                title="Book Another Appointment"
+                onPress={onBookAnotherAppointment}
+                style={{ marginTop: 12 }}
               />
             </View>
           ) : null}
 
-          <Field
-            label="Your name"
-            value={clientName}
-            onChangeText={setClientName}
-            placeholder="Enter your full name"
-          />
-          <Field
-            label="Email"
-            value={email}
-            onChangeText={setEmail}
-            placeholder="you@example.com"
-            keyboardType="email-address"
-          />
-          <Field
-            label="Phone"
-            value={phone}
-            onChangeText={setPhone}
-            placeholder="Phone number"
-            keyboardType="phone-pad"
-          />
+          {!successMessage ? (
+            <>
+              {checkoutUrl ? (
+                <View
+                  style={{
+                    backgroundColor: '#111827',
+                    borderColor: '#1E3A8A',
+                    borderWidth: 1,
+                    borderRadius: 16,
+                    padding: 14,
+                    marginBottom: 16,
+                  }}
+                >
+                  <Text style={{ color: '#BFDBFE', marginBottom: 10 }}>
+                    Payment in progress. If Checkout did not open, tap below.
+                  </Text>
+                  <PrimaryButton
+                    title="Open Checkout"
+                    onPress={() => {
+                      Linking.openURL(checkoutUrl);
+                    }}
+                  />
+                </View>
+              ) : null}
 
-          <View style={{ marginBottom: 14 }}>
-            <Text
-              style={{
-                color: COLORS.textSecondary,
-                marginBottom: 8,
-                fontSize: 13,
-                letterSpacing: 0.3,
-              }}
-            >
-              Team Member (Optional)
-            </Text>
+              <Field
+                label="Your name"
+                value={clientName}
+                onChangeText={setClientName}
+                placeholder="Enter your full name"
+              />
+              <Field
+                label="Email"
+                value={email}
+                onChangeText={setEmail}
+                placeholder="you@example.com"
+                keyboardType="email-address"
+              />
+              <Field
+                label="Phone"
+                value={phone}
+                onChangeText={setPhone}
+                placeholder="Phone number"
+                keyboardType="phone-pad"
+              />
 
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ paddingBottom: 4 }}
-            >
-              <TouchableOpacity
-                onPress={() => setSelectedStaffId('')}
-                style={{
-                  backgroundColor: !selectedStaffId ? '#231B3A' : '#15151B',
-                  borderColor: !selectedStaffId ? COLORS.accent : '#2D2D38',
-                  borderWidth: 1,
-                  borderRadius: 14,
-                  paddingHorizontal: 14,
-                  paddingVertical: 10,
-                  marginRight: 8,
-                }}
-              >
-                <Text style={{ color: COLORS.textPrimary, fontWeight: '600' }}>
-                  No Preference
+              <View style={{ marginBottom: 14 }}>
+                <Text
+                  style={{
+                    color: COLORS.textSecondary,
+                    marginBottom: 8,
+                    fontSize: 13,
+                    letterSpacing: 0.3,
+                  }}
+                >
+                  Team Member (Optional)
                 </Text>
-              </TouchableOpacity>
 
-              {staffMembers.map((member) => {
-                const isSelected = selectedStaffId === member.id;
-
-                return (
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={{ paddingBottom: 4 }}
+                >
                   <TouchableOpacity
-                    key={member.id}
-                    onPress={() => setSelectedStaffId(member.id)}
+                    onPress={() => setSelectedStaffId('')}
                     style={{
-                      backgroundColor: isSelected ? '#231B3A' : '#15151B',
-                      borderColor: isSelected ? COLORS.accent : '#2D2D38',
+                      backgroundColor: !selectedStaffId ? '#231B3A' : '#15151B',
+                      borderColor: !selectedStaffId ? COLORS.accent : '#2D2D38',
                       borderWidth: 1,
                       borderRadius: 14,
                       paddingHorizontal: 14,
@@ -903,132 +1318,156 @@ export default function PublicBookingScreen({ route }) {
                     }}
                   >
                     <Text style={{ color: COLORS.textPrimary, fontWeight: '600' }}>
-                      {member.name}
-                    </Text>
-                    <Text style={{ color: COLORS.textSecondary, fontSize: 12, marginTop: 2 }}>
-                      {member.role || 'Staff'}
+                      No Preference
                     </Text>
                   </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
-          </View>
 
-          <PickerField
-            label="Date"
-            value={formatDateValue(dateValue)}
-            onPress={() => {
-              setShowDatePicker(true);
-            }}
-          />
+                  {staffMembers.map((member, index) => {
+                    const isSelected = selectedStaffId === member.id;
 
-          <View style={{ marginBottom: 14 }}>
-            <Text
-              style={{
-                color: COLORS.textSecondary,
-                marginBottom: 8,
-                fontSize: 13,
-                letterSpacing: 0.3,
-              }}
-            >
-              Available Time Slots
-            </Text>
-
-            {isSlotsLoading ? (
-              <Text style={{ color: COLORS.textSecondary }}>Loading available slots...</Text>
-            ) : null}
-
-            {!isSlotsLoading ? (
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
-                {slotsResult.slots.map((slot) => {
-                  const isSelected = selectedSlotTime === slot.value;
-
-                  return (
-                    <TouchableOpacity
-                      key={slot.value}
-                      onPress={() => setSelectedSlotTime(slot.value)}
-                      style={{
-                        backgroundColor: isSelected ? '#231B3A' : '#15151B',
-                        borderColor: isSelected ? COLORS.accent : '#2D2D38',
-                        borderWidth: 1,
-                        borderRadius: 12,
-                        paddingHorizontal: 14,
-                        paddingVertical: 10,
-                        marginRight: 8,
-                        marginBottom: 8,
-                      }}
-                    >
-                      <Text style={{ color: COLORS.textPrimary, fontWeight: '600' }}>
-                        {slot.label}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
+                    return (
+                      <TouchableOpacity
+                        key={member?.id ? `staff-${member.id}` : `staff-index-${index}`}
+                        onPress={() => setSelectedStaffId(member.id)}
+                        style={{
+                          backgroundColor: isSelected ? '#231B3A' : '#15151B',
+                          borderColor: isSelected ? COLORS.accent : '#2D2D38',
+                          borderWidth: 1,
+                          borderRadius: 14,
+                          paddingHorizontal: 14,
+                          paddingVertical: 10,
+                          marginRight: 8,
+                        }}
+                      >
+                        <Text style={{ color: COLORS.textPrimary, fontWeight: '600' }}>
+                          {member.name}
+                        </Text>
+                        <Text style={{ color: COLORS.textSecondary, fontSize: 12, marginTop: 2 }}>
+                          {member.role || 'Staff'}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
               </View>
-            ) : null}
 
-            {!isSlotsLoading && !slotsResult.slots.length ? (
-              <Text style={{ color: '#FCA5A5', marginTop: 2 }}>
-                {slotsResult.reason || 'No available slots for this date.'}
-              </Text>
-            ) : null}
-          </View>
-
-          {showDatePicker ? (
-            <View
-              style={{
-                backgroundColor: COLORS.card,
-                borderRadius: 14,
-                borderWidth: 1,
-                borderColor: '#27272A',
-                marginBottom: 10,
-              }}
-            >
-              <DateTimePicker
-                value={dateValue}
-                mode="date"
-                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                onChange={(_event, selectedValue) => {
-                  if (Platform.OS !== 'ios') {
-                    setShowDatePicker(false);
-                  }
-                  if (selectedValue) {
-                    setDateValue(selectedValue);
-                  }
+              <PickerField
+                label="Date"
+                value={formatDateValue(dateValue)}
+                onPress={() => {
+                  setShowDatePicker(true);
                 }}
-                themeVariant="dark"
               />
-            </View>
+
+              <View style={{ marginBottom: 14 }}>
+                <Text
+                  style={{
+                    color: COLORS.textSecondary,
+                    marginBottom: 8,
+                    fontSize: 13,
+                    letterSpacing: 0.3,
+                  }}
+                >
+                  Available Time Slots
+                </Text>
+
+                {isSlotsLoading ? (
+                  <Text style={{ color: COLORS.textSecondary }}>Loading available slots...</Text>
+                ) : null}
+
+                {!isSlotsLoading ? (
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+                    {slotsResult.slots.map((slot, index) => {
+                      const isSelected = selectedSlotTime === slot.value;
+
+                      return (
+                        <TouchableOpacity
+                          key={`${slot.value || 'slot'}-${index}`}
+                          onPress={() => setSelectedSlotTime(slot.value)}
+                          style={{
+                            backgroundColor: isSelected ? '#231B3A' : '#15151B',
+                            borderColor: isSelected ? COLORS.accent : '#2D2D38',
+                            borderWidth: 1,
+                            borderRadius: 12,
+                            paddingHorizontal: 14,
+                            paddingVertical: 10,
+                            marginRight: 8,
+                            marginBottom: 8,
+                          }}
+                        >
+                          <Text style={{ color: COLORS.textPrimary, fontWeight: '600' }}>
+                            {slot.label}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                ) : null}
+
+                {!isSlotsLoading && !slotsResult.slots.length ? (
+                  <Text style={{ color: '#FCA5A5', marginTop: 2 }}>
+                    {slotsResult.reason || 'No available slots for this date.'}
+                  </Text>
+                ) : null}
+              </View>
+
+              {showDatePicker ? (
+                <View
+                  style={{
+                    backgroundColor: COLORS.card,
+                    borderRadius: 14,
+                    borderWidth: 1,
+                    borderColor: '#27272A',
+                    marginBottom: 10,
+                  }}
+                >
+                  <DateTimePicker
+                    value={dateValue}
+                    mode="date"
+                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                    onChange={(_event, selectedValue) => {
+                      if (Platform.OS !== 'ios') {
+                        setShowDatePicker(false);
+                      }
+                      if (selectedValue) {
+                        setDateValue(selectedValue);
+                      }
+                    }}
+                    themeVariant="dark"
+                  />
+                </View>
+              ) : null}
+
+              {Platform.OS === 'ios' && showDatePicker ? (
+                <PrimaryButton
+                  title="Done"
+                  onPress={() => {
+                    setShowDatePicker(false);
+                  }}
+                  style={{ marginTop: 4, marginBottom: 10 }}
+                />
+              ) : null}
+
+              <Field
+                label="Notes"
+                value={notes}
+                onChangeText={setNotes}
+                placeholder="Anything else we should know?"
+                multiline
+              />
+
+              <PrimaryButton
+                title={
+                  isSubmitting
+                    ? 'Processing...'
+                    : business?.deposits_enabled || business?.require_card_on_booking
+                      ? 'Continue to Payment'
+                      : 'Confirm Booking'
+                }
+                onPress={onSubmit}
+              />
+            </>
           ) : null}
-
-          {Platform.OS === 'ios' && showDatePicker ? (
-            <PrimaryButton
-              title="Done"
-              onPress={() => {
-                setShowDatePicker(false);
-              }}
-              style={{ marginTop: 4, marginBottom: 10 }}
-            />
-          ) : null}
-
-          <Field
-            label="Notes"
-            value={notes}
-            onChangeText={setNotes}
-            placeholder="Anything else we should know?"
-            multiline
-          />
-
-          <PrimaryButton
-            title={
-              isSubmitting
-                ? 'Processing...'
-                : business?.deposits_enabled || business?.require_card_on_booking
-                  ? 'Continue to Payment'
-                  : 'Confirm Booking'
-            }
-            onPress={onSubmit}
-          />
         </ScrollView>
       </KeyboardAvoidingView>
     </ScreenContainer>

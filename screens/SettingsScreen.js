@@ -7,6 +7,8 @@ import ScreenContainer from '../components/ScreenContainer';
 import { COLORS } from '../constants/colors';
 import { ROUTES } from '../constants/routes';
 import { useAuth } from '../context/AuthContext';
+
+const DEV_TEST_BOOKING_TOKEN = '6c0be026934c441bb3deb8ec3ee2723b9ffb';
  
 const SETTINGS = [
   {
@@ -42,7 +44,7 @@ export default function SettingsScreen({ navigation }) {
   };
 
   const publicBookingLink = business?.slug
-    ? `https://salo.app/${business.slug}`
+    ? `https://salo.app/book/${business.slug}`
     : '';
 
   const onCopyPublicLink = async () => {
@@ -238,6 +240,51 @@ export default function SettingsScreen({ navigation }) {
               onPress={() => navigation.navigate(ROUTES.Staff)}
               style={{ marginTop: 12 }}
             />
+
+            <View
+              style={{
+                marginTop: 16,
+                backgroundColor: '#2E2214',
+                borderWidth: 1,
+                borderColor: '#7A5A2C',
+                borderRadius: 12,
+                padding: 12,
+              }}
+            >
+              <Text
+                style={{
+                  color: '#F59E0B',
+                  fontSize: 12,
+                  fontWeight: '800',
+                  letterSpacing: 0.6,
+                }}
+              >
+                DEV ONLY
+              </Text>
+              <PrimaryButton
+                title="Test Appointment Portal"
+                onPress={() =>
+                  navigation.navigate(ROUTES.AppointmentPortal, {
+                    booking_token: DEV_TEST_BOOKING_TOKEN,
+                  })
+                }
+                style={{ marginTop: 8 }}
+              />
+              <PrimaryButton
+                title="Test Public Booking Page"
+                onPress={() => {
+                  if (!business?.slug) {
+                    Alert.alert('Missing slug', 'Business slug is required to open public booking page.');
+                    return;
+                  }
+
+                  navigation.navigate(ROUTES.PublicBooking, {
+                    businessSlug: business.slug,
+                  });
+                }}
+                style={{ marginTop: 8 }}
+              />
+            </View>
 
             <PrimaryButton
               title="Logout"

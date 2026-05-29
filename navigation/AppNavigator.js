@@ -42,8 +42,8 @@ const linking = {
       Welcome: '',
       Login: 'login',
       OnboardingWizard: 'onboarding',
-      AppointmentPortal: 'appointment/:booking_token',
-      PublicBooking: ':slug',
+      AppointmentPortal: 'appointment/:bookingToken',
+      PublicBooking: 'book/:businessSlug',
       MainTabs: 'app',
       AddBooking: 'booking/new',
       AddClient: 'client/new',
@@ -64,6 +64,55 @@ const linking = {
 const Stack = createNativeStackNavigator();
 const BUSINESS_SELECT_COLUMNS = 'id, owner_user_id, business_name, slug, description, timezone, services, public_booking_enabled, onboarding_completed, deposits_enabled, deposit_percentage, require_card_on_booking, stripe_account_id, stripe_charges_enabled, stripe_payouts_enabled, created_at';
 const BUSINESS_BOOTSTRAP_TIMEOUT_MS = 15000;
+
+function isValidBookingDateText(value) {
+  if (typeof value !== 'string') {
+    return false;
+  }
+
+  const match = value.trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) {
+    return false;
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+
+  if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) {
+    return false;
+  }
+
+  if (year < 2000 || year > 2100) {
+    return false;
+  }
+
+  const parsed = new Date(year, month - 1, day, 0, 0, 0, 0);
+  return parsed.getFullYear() === year
+    && parsed.getMonth() === month - 1
+    && parsed.getDate() === day;
+}
+
+function isValidBookingTimeText(value) {
+  if (typeof value !== 'string') {
+    return false;
+  }
+
+  const match = value.trim().match(/^(\d{2}):(\d{2})$/);
+  if (!match) {
+    return false;
+  }
+
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+
+  return Number.isInteger(hours)
+    && Number.isInteger(minutes)
+    && hours >= 0
+    && hours <= 23
+    && minutes >= 0
+    && minutes <= 59;
+}
 
 function normalizeOnboardingStatus(businessRecord) {
   if (!businessRecord) {
@@ -779,6 +828,14 @@ export default function AppNavigator() {
 
     setBookingsError('');
 
+    if (Object.prototype.hasOwnProperty.call(bookingInput, 'date') && !isValidBookingDateText(bookingInput.date)) {
+      return { error: { message: 'Invalid booking date. Please choose a valid appointment date.' } };
+    }
+
+    if (Object.prototype.hasOwnProperty.call(bookingInput, 'time') && !isValidBookingTimeText(bookingInput.time)) {
+      return { error: { message: 'Invalid booking time. Please choose a valid appointment time.' } };
+    }
+
     const payload = {
       ...bookingInput,
       user_id: session.user.id,
@@ -805,6 +862,14 @@ export default function AppNavigator() {
     }
 
     setBookingsError('');
+
+    if (Object.prototype.hasOwnProperty.call(bookingInput, 'date') && !isValidBookingDateText(bookingInput.date)) {
+      return { error: { message: 'Invalid booking date. Please choose a valid appointment date.' } };
+    }
+
+    if (Object.prototype.hasOwnProperty.call(bookingInput, 'time') && !isValidBookingTimeText(bookingInput.time)) {
+      return { error: { message: 'Invalid booking time. Please choose a valid appointment time.' } };
+    }
 
     const { data, error } = await supabase
       .from('bookings')

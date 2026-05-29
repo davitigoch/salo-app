@@ -84,12 +84,53 @@ function parseDateValue(value) {
     return new Date();
   }
 
-  const parsed = new Date(`${value}T00:00:00`);
+  const match = String(value).trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) {
+    return new Date();
+  }
+
+  const parsed = new Date(
+    Number(match[1]),
+    Number(match[2]) - 1,
+    Number(match[3]),
+    0,
+    0,
+    0,
+    0
+  );
   if (Number.isNaN(parsed.getTime())) {
     return new Date();
   }
 
   return parsed;
+}
+
+function isValidBookingDateText(value) {
+  if (typeof value !== 'string') {
+    return false;
+  }
+
+  const match = value.trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) {
+    return false;
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+
+  if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) {
+    return false;
+  }
+
+  if (year < 2000 || year > 2100) {
+    return false;
+  }
+
+  const parsed = new Date(year, month - 1, day, 0, 0, 0, 0);
+  return parsed.getFullYear() === year
+    && parsed.getMonth() === month - 1
+    && parsed.getDate() === day;
 }
 
 function PickerField({ label, value, onPress }) {
@@ -341,6 +382,11 @@ export default function AddBookingScreen({ navigation, route }) {
 
     if (!slotsResult.slots.some((slot) => slot.value === normalizedTime)) {
       Alert.alert('Unavailable slot', 'Please pick one of the available time slots.');
+      return;
+    }
+
+    if (!isValidBookingDateText(normalizedDate)) {
+      Alert.alert('Invalid date', 'Please choose a valid appointment date.');
       return;
     }
 

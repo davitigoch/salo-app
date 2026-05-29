@@ -22,6 +22,47 @@ type BookingDraft = {
   booking_token?: string;
 };
 
+function isValidBookingDate(value: string) {
+  const match = String(value || '').trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) {
+    return false;
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+
+  if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) {
+    return false;
+  }
+
+  if (year < 2000 || year > 2100) {
+    return false;
+  }
+
+  const parsed = new Date(year, month - 1, day, 0, 0, 0, 0);
+  return parsed.getFullYear() === year
+    && parsed.getMonth() === month - 1
+    && parsed.getDate() === day;
+}
+
+function isValidBookingTime(value: string) {
+  const match = String(value || '').trim().match(/^(\d{2}):(\d{2})$/);
+  if (!match) {
+    return false;
+  }
+
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+
+  return Number.isInteger(hours)
+    && Number.isInteger(minutes)
+    && hours >= 0
+    && hours <= 23
+    && minutes >= 0
+    && minutes <= 59;
+}
+
 function toMajorUnits(amount: number) {
   return Number((amount / 100).toFixed(2));
 }
@@ -54,6 +95,13 @@ Deno.serve(async (req) => {
 
   if (!bookingDraft.business_id || !bookingDraft.service_id || !bookingDraft.client_name || !bookingDraft.date || !bookingDraft.time) {
     return new Response(JSON.stringify({ error: 'Incomplete booking draft payload.' }), {
+      status: 400,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  if (!isValidBookingDate(bookingDraft.date) || !isValidBookingTime(bookingDraft.time)) {
+    return new Response(JSON.stringify({ error: 'Invalid booking date or time in booking draft payload.' }), {
       status: 400,
       headers: { 'Content-Type': 'application/json' },
     });

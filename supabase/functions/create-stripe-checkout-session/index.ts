@@ -4,6 +4,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || '';
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
 const STRIPE_SECRET_KEY = Deno.env.get('STRIPE_SECRET_KEY') || '';
+const APP_PUBLIC_URL = Deno.env.get('APP_PUBLIC_URL') || '';
 
 const stripe = new Stripe(STRIPE_SECRET_KEY);
 const adminClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
@@ -38,8 +39,22 @@ Deno.serve(async (req) => {
     });
   }
 
-  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY || !STRIPE_SECRET_KEY) {
-    return new Response(JSON.stringify({ error: 'Missing required environment configuration.' }), {
+  const missingSecrets: string[] = [];
+  if (!SUPABASE_SERVICE_ROLE_KEY) {
+    missingSecrets.push('SUPABASE_SERVICE_ROLE_KEY');
+  }
+  if (!STRIPE_SECRET_KEY) {
+    missingSecrets.push('STRIPE_SECRET_KEY');
+  }
+  if (!APP_PUBLIC_URL) {
+    missingSecrets.push('APP_PUBLIC_URL');
+  }
+
+  if (!SUPABASE_URL || missingSecrets.length) {
+    return new Response(JSON.stringify({
+      error: `Missing required environment configuration: ${missingSecrets.join(', ') || 'SUPABASE_URL'}`,
+      missingSecrets,
+    }), {
       status: 500,
       headers: { 'Content-Type': 'application/json' },
     });

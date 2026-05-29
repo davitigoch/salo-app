@@ -108,7 +108,7 @@ returns table (
   service_duration_minutes integer,
   price numeric,
   date text,
-  time text,
+  booking_time text,
   status text,
   payment_status text,
   staff_member_id uuid,
@@ -144,6 +144,12 @@ begin
     return;
   end if;
 
+  raise notice '[AppointmentPortalTrace][DB] bookings raw values: token=% date=% time=% status=%',
+    v_booking.booking_token,
+    v_booking.date,
+    v_booking.time,
+    v_booking.status;
+
   select *
   into v_business
   from public.businesses bs
@@ -163,6 +169,12 @@ begin
   order by coalesce(p.updated_at, p.created_at) desc
   limit 1;
 
+  raise notice '[AppointmentPortalTrace][RPC] returning values: date=% booking_time=% target_date=% payment_status=%',
+    v_booking.date,
+    v_booking.time,
+    v_target_date,
+    coalesce(v_payment_status, coalesce(v_booking.booking_metadata ->> 'payment_status', 'unpaid'));
+
   return query
   select
     v_booking.id as booking_id,
@@ -174,7 +186,7 @@ begin
     greatest(1, coalesce((v_booking.booking_metadata ->> 'service_duration_minutes')::integer, 60)) as service_duration_minutes,
     v_booking.price,
     v_booking.date,
-    v_booking.time,
+    v_booking.time as booking_time,
     v_booking.status,
     coalesce(v_payment_status, coalesce(v_booking.booking_metadata ->> 'payment_status', 'unpaid')) as payment_status,
     v_booking.staff_member_id,
@@ -255,7 +267,7 @@ begin
     greatest(1, coalesce((v_booking.booking_metadata ->> 'service_duration_minutes')::integer, 60)),
     v_booking.price,
     v_booking.date,
-    v_booking.time,
+    v_booking.time as booking_time,
     v_booking.status,
     coalesce(v_payment_status, coalesce(v_booking.booking_metadata ->> 'payment_status', 'unpaid')),
     v_booking.staff_member_id,
@@ -348,6 +360,7 @@ as $$
 declare
   v_booking public.bookings%rowtype;
   v_metadata jsonb;
+  v_rows_updated integer := 0;
 begin
   if p_booking_token is null or length(trim(p_booking_token)) = 0 then
     return query select false, 'Missing booking token.', null::text, null::text;
@@ -384,7 +397,17 @@ begin
       booking_metadata = v_metadata
   where id = v_booking.id;
 
+  get diagnostics v_rows_updated = row_count;
+
+  if v_rows_updated = 0 then
+    return query select false, 'Unable to cancel appointment.', v_booking.booking_token, v_booking.status;
+    return;
+  end if;
+
   return query select true, 'Your appointment was cancelled.', v_booking.booking_token, 'cancelled'::text;
+exception
+  when others then
+    return query select false, coalesce(SQLERRM, 'Unable to cancel appointment.'), null::text, null::text;
 end;
 $$;
 
