@@ -9,6 +9,7 @@ import {
   cancelBookingReminders,
   syncBookingReminders,
 } from '../notifications/bookingReminders';
+import { registerForPushNotificationsAsync } from '../notifications/pushTokens';
 import { supabase } from '../constants/supabase';
 import { AuthProvider } from '../context/AuthContext';
 import { BookingsProvider } from '../context/BookingsContext';
@@ -213,6 +214,36 @@ export default function AppNavigator() {
       subscription.unsubscribe();
     };
   }, []);
+
+  useEffect(() => {
+    const userId = session?.user?.id;
+
+    if (!userId) {
+      return;
+    }
+
+    console.log('PUSH registration started');
+    console.log('PUSH user id', userId);
+
+    registerForPushNotificationsAsync(userId).then((result) => {
+      if (result?.status === 'saved') {
+        console.log('PUSH saved', { userId });
+        return;
+      }
+
+      if (result?.status === 'denied') {
+        console.log('PUSH requested permission', 'denied');
+        return;
+      }
+
+      if (result?.status === 'error') {
+        console.log('PUSH error', {
+          userId,
+          reason: result?.reason || 'unknown_error',
+        });
+      }
+    });
+  }, [session?.user?.id]);
 
   const fetchBookings = useCallback(async () => {
     if (!session?.user?.id) {
