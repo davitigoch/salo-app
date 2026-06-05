@@ -67,43 +67,141 @@ function toMajorUnits(amount: number) {
   return Number((amount / 100).toFixed(2));
 }
 
+function toErrorMessage(error: unknown, fallback: string) {
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+
+  if (typeof error === 'string' && error) {
+    return error;
+  }
+
+  return fallback;
+}
+
+function toErrorDetails(error: unknown) {
+  if (error instanceof Error) {
+    return {
+      name: error.name,
+      message: error.message,
+      stack: error.stack,
+    };
+  }
+
+  return error;
+}
+
+function errorResponse({
+  status,
+  step,
+  error,
+  details,
+}: {
+  status: number;
+  step: string;
+  error: string;
+  details?: unknown;
+}) {
+  return new Response(
+    JSON.stringify({
+      error,
+      step,
+      details: details ?? null,
+    }),
+    {
+      status,
+      headers: { 'Content-Type': 'application/json' },
+    }
+  );
+}
+
 Deno.serve(async (req) => {
   if (req.method !== 'POST') {
-    return new Response(JSON.stringify({ error: 'Method not allowed' }), {
+    const details = { method: req.method };
+    console.error('[finalize-public-booking-payment] method_not_allowed', details);
+    return errorResponse({
       status: 405,
-      headers: { 'Content-Type': 'application/json' },
+      step: 'method_check',
+      error: 'Method not allowed',
+      details,
     });
   }
 
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY || !STRIPE_SECRET_KEY) {
-    return new Response(JSON.stringify({ error: 'Missing required environment configuration.' }), {
+    const details = {
+      hasSupabaseUrl: Boolean(SUPABASE_URL),
+      hasServiceRoleKey: Boolean(SUPABASE_SERVICE_ROLE_KEY),
+      hasStripeSecretKey: Boolean(STRIPE_SECRET_KEY),
+    };
+    console.error('[finalize-public-booking-payment] missing_environment_configuration', details);
+    return errorResponse({
       status: 500,
-      headers: { 'Content-Type': 'application/json' },
+      step: 'environment_validation',
+      error: 'Missing required environment configuration.',
+      details,
     });
   }
 
-  const body = await req.json().catch(() => ({}));
+  let body: Record<string, unknown> = {};
+  try {
+    body = await req.json();
+  } catch (parseError) {
+    const details = {
+      parseError: toErrorDetails(parseError),
+    };
+    console.error('[finalize-public-booking-payment] request_body_parse_failed', details);
+    return errorResponse({
+      status: 400,
+      step: 'request_body_parse',
+      error: 'Invalid JSON body.',
+      details,
+    });
+  }
+
   const checkoutSessionId = body?.checkoutSessionId as string | undefined;
   const bookingDraft = (body?.bookingDraft || {}) as BookingDraft;
 
   if (!checkoutSessionId) {
-    return new Response(JSON.stringify({ error: 'checkoutSessionId is required.' }), {
+    const details = {
+      hasCheckoutSessionId: Boolean(checkoutSessionId),
+    };
+    console.error('[finalize-public-booking-payment] missing_checkout_session_id', details);
+    return errorResponse({
       status: 400,
-      headers: { 'Content-Type': 'application/json' },
+      step: 'request_validation',
+      error: 'checkoutSessionId is required.',
+      details,
     });
   }
 
   if (!bookingDraft.business_id || !bookingDraft.service_id || !bookingDraft.client_name || !bookingDraft.date || !bookingDraft.time) {
-    return new Response(JSON.stringify({ error: 'Incomplete booking draft payload.' }), {
+    const details = {
+      hasBusinessId: Boolean(bookingDraft.business_id),
+      hasServiceId: Boolean(bookingDraft.service_id),
+      hasClientName: Boolean(bookingDraft.client_name),
+      hasDate: Boolean(bookingDraft.date),
+      hasTime: Boolean(bookingDraft.time),
+    };
+    console.error('[finalize-public-booking-payment] incomplete_booking_draft_payload', details);
+    return errorResponse({
       status: 400,
-      headers: { 'Content-Type': 'application/json' },
+      step: 'request_validation',
+      error: 'Incomplete booking draft payload.',
+      details,
     });
   }
 
   if (!isValidBookingDate(bookingDraft.date) || !isValidBookingTime(bookingDraft.time)) {
-    return new Response(JSON.stringify({ error: 'Invalid booking date or time in booking draft payload.' }), {
+    const details = {
+      date: bookingDraft.date,
+      time: bookingDraft.time,
+    };
+    console.error('[finalize-public-booking-payment] invalid_booking_draft_datetime', details);
+    return errorResponse({
       status: 400,
-      headers: { 'Content-Type': 'application/json' },
+      step: 'request_validation',
+      error: 'Invalid booking date or time in booking draft payload.',
+      details,
     });
   }
 
@@ -114,9 +212,16 @@ Deno.serve(async (req) => {
     .maybeSingle();
 
   if (existingPaymentError) {
-    return new Response(JSON.stringify({ error: existingPaymentError.message }), {
+    const details = {
+      checkoutSessionId,
+      queryError: toErrorDetails(existingPaymentError),
+    };
+    console.error('[finalize-public-booking-payment] existing_payment_lookup_failed', details);
+    return errorResponse({
       status: 500,
-      headers: { 'Content-Type': 'application/json' },
+      step: 'existing_payment_lookup',
+      error: toErrorMessage(existingPaymentError, 'Failed to lookup existing payment.'),
+      details,
     });
   }
 
@@ -145,22 +250,22 @@ Deno.serve(async (req) => {
 
   const { data: business, error: businessError } = await adminClient
     .from('businesses')
-    .select('id, owner_user_id, slug, public_booking_enabled, stripe_account_id, deposits_enabled, deposit_percentage')
+    .select('id, owner_user_id, slug, public_booking_enabled, deposits_enabled, deposit_percentage')
     .eq('id', bookingDraft.business_id)
     .eq('public_booking_enabled', true)
     .single();
 
   if (businessError || !business) {
-    return new Response(JSON.stringify({ error: 'Business not found or unavailable.' }), {
+    const details = {
+      businessId: bookingDraft.business_id,
+      queryError: toErrorDetails(businessError),
+    };
+    console.error('[finalize-public-booking-payment] business_lookup_failed', details);
+    return errorResponse({
       status: 404,
-      headers: { 'Content-Type': 'application/json' },
-    });
-  }
-
-  if (!business.stripe_account_id) {
-    return new Response(JSON.stringify({ error: 'Business has no connected Stripe account.' }), {
-      status: 409,
-      headers: { 'Content-Type': 'application/json' },
+      step: 'business_lookup',
+      error: 'Business not found or unavailable.',
+      details,
     });
   }
 
@@ -172,9 +277,19 @@ Deno.serve(async (req) => {
     .single();
 
   if (serviceError || !service || !service.is_active) {
-    return new Response(JSON.stringify({ error: 'Service not found or unavailable.' }), {
+    const details = {
+      serviceId: bookingDraft.service_id,
+      businessId: business.id,
+      queryError: toErrorDetails(serviceError),
+      hasService: Boolean(service),
+      isActive: Boolean(service?.is_active),
+    };
+    console.error('[finalize-public-booking-payment] service_lookup_failed', details);
+    return errorResponse({
       status: 404,
-      headers: { 'Content-Type': 'application/json' },
+      step: 'service_lookup',
+      error: 'Service not found or unavailable.',
+      details,
     });
   }
 
@@ -188,36 +303,50 @@ Deno.serve(async (req) => {
       .maybeSingle();
 
     if (!staffMatch) {
-      return new Response(JSON.stringify({ error: 'Selected team member is unavailable.' }), {
+      const details = {
+        staffMemberId: bookingDraft.staff_member_id,
+        businessId: business.id,
+      };
+      console.error('[finalize-public-booking-payment] staff_validation_failed', details);
+      return errorResponse({
         status: 400,
-        headers: { 'Content-Type': 'application/json' },
+        step: 'staff_validation',
+        error: 'Selected team member is unavailable.',
+        details,
       });
     }
   }
 
   let session: Stripe.Checkout.Session;
   try {
-    session = await stripe.checkout.sessions.retrieve(
-      checkoutSessionId,
-      {
-        expand: ['payment_intent'],
-      },
-      {
-        stripeAccount: business.stripe_account_id,
-      }
-    );
+    session = await stripe.checkout.sessions.retrieve(checkoutSessionId, {
+      expand: ['payment_intent'],
+    });
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Failed to verify checkout session.';
-    return new Response(JSON.stringify({ error: message }), {
+    const details = {
+      checkoutSessionId,
+      stripeError: toErrorDetails(error),
+    };
+    console.error('[finalize-public-booking-payment] stripe_checkout_session_retrieve_failed', details);
+    return errorResponse({
       status: 400,
-      headers: { 'Content-Type': 'application/json' },
+      step: 'stripe_checkout_session_retrieve',
+      error: toErrorMessage(error, 'Failed to verify checkout session.'),
+      details,
     });
   }
 
   if (session.payment_status !== 'paid') {
-    return new Response(JSON.stringify({ error: 'Checkout session is not paid yet.' }), {
+    const details = {
+      checkoutSessionId,
+      paymentStatus: session.payment_status,
+    };
+    console.error('[finalize-public-booking-payment] checkout_session_not_paid', details);
+    return errorResponse({
       status: 409,
-      headers: { 'Content-Type': 'application/json' },
+      step: 'session_payment_status_validation',
+      error: 'Checkout session is not paid yet.',
+      details,
     });
   }
 
@@ -225,9 +354,19 @@ Deno.serve(async (req) => {
   const metadataServiceId = session.metadata?.service_id || '';
 
   if (metadataBusinessId !== business.id || metadataServiceId !== service.id) {
-    return new Response(JSON.stringify({ error: 'Checkout session metadata does not match booking draft.' }), {
+    const details = {
+      checkoutSessionId,
+      metadataBusinessId,
+      expectedBusinessId: business.id,
+      metadataServiceId,
+      expectedServiceId: service.id,
+    };
+    console.error('[finalize-public-booking-payment] session_metadata_validation_failed', details);
+    return errorResponse({
       status: 400,
-      headers: { 'Content-Type': 'application/json' },
+      step: 'session_metadata_validation',
+      error: 'Checkout session metadata does not match booking draft.',
+      details,
     });
   }
 
@@ -240,9 +379,18 @@ Deno.serve(async (req) => {
     : Number(fullServicePrice.toFixed(2));
 
   if (Math.abs(amountPaid - expectedAmount) > 0.01) {
-    return new Response(JSON.stringify({ error: 'Paid amount does not match expected service pricing.' }), {
+    const details = {
+      checkoutSessionId,
+      amountPaid,
+      expectedAmount,
+      chargeMode,
+    };
+    console.error('[finalize-public-booking-payment] amount_validation_failed', details);
+    return errorResponse({
       status: 400,
-      headers: { 'Content-Type': 'application/json' },
+      step: 'amount_validation',
+      error: 'Paid amount does not match expected service pricing.',
+      details,
     });
   }
 
@@ -292,9 +440,17 @@ Deno.serve(async (req) => {
     .single();
 
   if (bookingInsertError || !insertedBooking) {
-    return new Response(JSON.stringify({ error: bookingInsertError?.message || 'Failed to create booking.' }), {
+    const details = {
+      bookingInsertPayload,
+      insertError: toErrorDetails(bookingInsertError),
+      hasInsertedBooking: Boolean(insertedBooking),
+    };
+    console.error('[finalize-public-booking-payment] booking_insert_failed', details);
+    return errorResponse({
       status: 500,
-      headers: { 'Content-Type': 'application/json' },
+      step: 'booking_insert',
+      error: toErrorMessage(bookingInsertError, 'Failed to create booking.'),
+      details,
     });
   }
 
@@ -312,9 +468,17 @@ Deno.serve(async (req) => {
       .eq('id', existingPayment.id);
 
     if (updatePaymentError) {
-      return new Response(JSON.stringify({ error: updatePaymentError.message }), {
+      const details = {
+        paymentId: existingPayment.id,
+        bookingId: insertedBooking.id,
+        updateError: toErrorDetails(updatePaymentError),
+      };
+      console.error('[finalize-public-booking-payment] payment_update_failed', details);
+      return errorResponse({
         status: 500,
-        headers: { 'Content-Type': 'application/json' },
+        step: 'payment_update',
+        error: toErrorMessage(updatePaymentError, 'Failed to update payment.'),
+        details,
       });
     }
 
@@ -356,9 +520,18 @@ Deno.serve(async (req) => {
     .single();
 
   if (paymentInsertError || !insertedPayment) {
-    return new Response(JSON.stringify({ error: paymentInsertError?.message || 'Failed to create payment.' }), {
+    const details = {
+      bookingId: insertedBooking.id,
+      checkoutSessionId: session.id,
+      insertError: toErrorDetails(paymentInsertError),
+      hasInsertedPayment: Boolean(insertedPayment),
+    };
+    console.error('[finalize-public-booking-payment] payment_insert_failed', details);
+    return errorResponse({
       status: 500,
-      headers: { 'Content-Type': 'application/json' },
+      step: 'payment_insert',
+      error: toErrorMessage(paymentInsertError, 'Failed to create payment.'),
+      details,
     });
   }
 

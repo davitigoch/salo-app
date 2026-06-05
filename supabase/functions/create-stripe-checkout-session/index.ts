@@ -144,20 +144,13 @@ Deno.serve(async (req) => {
 
   const { data: business, error: businessError } = await adminClient
     .from('businesses')
-    .select('id, business_name, stripe_account_id, deposits_enabled, deposit_percentage, require_card_on_booking')
+    .select('id, business_name, deposits_enabled, deposit_percentage, require_card_on_booking')
     .eq('id', bookingBusinessId)
     .single();
 
   if (businessError || !business) {
     return new Response(JSON.stringify({ error: 'Business not found.' }), {
       status: 404,
-      headers: { 'Content-Type': 'application/json' },
-    });
-  }
-
-  if (!business.stripe_account_id) {
-    return new Response(JSON.stringify({ error: 'Business has not connected a Stripe account yet.' }), {
-      status: 409,
       headers: { 'Content-Type': 'application/json' },
     });
   }
@@ -205,12 +198,35 @@ Deno.serve(async (req) => {
   try {
     const chargeMode = business.deposits_enabled && paymentMode !== 'full' ? 'deposit' : 'full';
 
-    const session = await stripe.checkout.sessions.create(
-      {
-        mode: 'payment',
-        success_url: successUrl,
-        cancel_url: cancelUrl,
-        customer_email: bookingCustomerEmail || undefined,
+    const session = await stripe.checkout.sessions.create({
+      mode: 'payment',
+      success_url: successUrl,
+      cancel_url: cancelUrl,
+      customer_email: bookingCustomerEmail || undefined,
+      metadata: {
+        booking_id: bookingId || '',
+        business_id: business.id,
+        service_id: serviceId || '',
+        charge_mode: chargeMode,
+        source_flow: bookingId ? 'owner_booking_checkout' : 'public_booking_checkout',
+      },
+      line_items: [
+        {
+          quantity: 1,
+          price_data: {
+            currency,
+            unit_amount: amountMinor,
+            product_data: {
+              name: `${bookingServiceName} booking`,
+              description:
+                chargeMode === 'deposit'
+                  ? `Deposit for ${bookingClientName}`
+                  : `Full prepayment for ${bookingClientName}`,
+            },
+          },
+        },
+      ],
+      payment_intent_data: {
         metadata: {
           booking_id: bookingId || '',
           business_id: business.id,
@@ -218,36 +234,8 @@ Deno.serve(async (req) => {
           charge_mode: chargeMode,
           source_flow: bookingId ? 'owner_booking_checkout' : 'public_booking_checkout',
         },
-        line_items: [
-          {
-            quantity: 1,
-            price_data: {
-              currency,
-              unit_amount: amountMinor,
-              product_data: {
-                name: `${bookingServiceName} booking`,
-                description:
-                  chargeMode === 'deposit'
-                    ? `Deposit for ${bookingClientName}`
-                    : `Full prepayment for ${bookingClientName}`,
-              },
-            },
-          },
-        ],
-        payment_intent_data: {
-          metadata: {
-            booking_id: bookingId || '',
-            business_id: business.id,
-            service_id: serviceId || '',
-            charge_mode: chargeMode,
-            source_flow: bookingId ? 'owner_booking_checkout' : 'public_booking_checkout',
-          },
-        },
       },
-      {
-        stripeAccount: business.stripe_account_id,
-      }
-    );
+    });
 
     return new Response(
       JSON.stringify({
