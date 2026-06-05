@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useNavigation } from '@react-navigation/native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ExpoLinking from 'expo-linking';
 import * as Clipboard from 'expo-clipboard';
 
@@ -29,6 +30,7 @@ import { supabase } from '../constants/supabase';
 const STRIPE_FUNCTION_NAME = 'create-stripe-checkout-session';
 const DISABLE_STRIPE = String(process.env.EXPO_PUBLIC_DISABLE_STRIPE || '').toLowerCase() === 'true';
 const APP_ENV = String(process.env.APP_ENV || '').toLowerCase();
+const PENDING_BOOKING_DRAFT_STORAGE_KEY = 'salo.publicBooking.pendingDraft';
 
 function Field({
   label,
@@ -355,6 +357,7 @@ async function extractEdgeFunctionErrorMessage(checkoutError, checkoutData) {
 export default function PublicBookingScreen({ route }) {
   const navigation = useNavigation();
   const businessSlug = route?.params?.businessSlug || route?.params?.slug;
+  const isPaymentCallbackRoute = route?.name === ROUTES.PublicBookingPaymentCallback;
   const [business, setBusiness] = useState(null);
   const [services, setServices] = useState([]);
   const [staffMembers, setStaffMembers] = useState([]);
@@ -383,6 +386,12 @@ export default function PublicBookingScreen({ route }) {
   useEffect(() => {
     async function loadBusiness() {
       if (!businessSlug) {
+        if (isPaymentCallbackRoute) {
+          setError('');
+          setIsLoading(false);
+          return;
+        }
+
         setError('Missing business link.');
         setIsLoading(false);
         return;
@@ -488,7 +497,38 @@ export default function PublicBookingScreen({ route }) {
     }
 
     loadBusiness();
-  }, [businessSlug]);
+  }, [businessSlug, isPaymentCallbackRoute]);
+
+  const savePendingBookingDraft = async (draft) => {
+    try {
+      await AsyncStorage.setItem(PENDING_BOOKING_DRAFT_STORAGE_KEY, JSON.stringify(draft));
+      return true;
+    } catch (_storageError) {
+      return false;
+    }
+  };
+
+  const loadPendingBookingDraft = async () => {
+    try {
+      const serializedDraft = await AsyncStorage.getItem(PENDING_BOOKING_DRAFT_STORAGE_KEY);
+      if (!serializedDraft) {
+        return null;
+      }
+
+      const parsedDraft = JSON.parse(serializedDraft);
+      return parsedDraft && typeof parsedDraft === 'object' ? parsedDraft : null;
+    } catch (_storageError) {
+      return null;
+    }
+  };
+
+  const clearPendingBookingDraft = async () => {
+    try {
+      await AsyncStorage.removeItem(PENDING_BOOKING_DRAFT_STORAGE_KEY);
+    } catch (_storageError) {
+      // Ignore storage cleanup failures and continue UI flow.
+    }
+  };
 
   const onAddToCalendar = async () => {
     if (!successBookingSummary) {
@@ -675,7 +715,15 @@ export default function PublicBookingScreen({ route }) {
         return;
       }
 
-      if (!pendingBookingDraft) {
+      let effectivePendingDraft = pendingBookingDraft;
+      if (!effectivePendingDraft) {
+        effectivePendingDraft = await loadPendingBookingDraft();
+        if (effectivePendingDraft) {
+          setPendingBookingDraft(effectivePendingDraft);
+        }
+      }
+
+      if (!effectivePendingDraft) {
         Alert.alert('Payment received', 'Unable to find your pending booking details. Please try again.');
         return;
       }
@@ -687,7 +735,7 @@ export default function PublicBookingScreen({ route }) {
         {
           body: {
             checkoutSessionId: sessionId,
-            bookingDraft: pendingBookingDraft,
+            bookingDraft: effectivePendingDraft,
           },
         }
       );
@@ -704,7 +752,7 @@ export default function PublicBookingScreen({ route }) {
         return;
       }
 
-      const finalizedToken = data?.bookingToken || pendingBookingDraft?.booking_token || '';
+  const finalizedToken = data?.bookingToken || effectivePendingDraft?.booking_token || '';
       const finalizedStatus = data?.bookingStatus || 'confirmed';
       const finalizedLink = getPublicAppointmentUrl(finalizedToken);
 
@@ -716,13 +764,14 @@ export default function PublicBookingScreen({ route }) {
       setManageAppointmentUrl(finalizedLink);
       setSuccessBookingSummary({
         service: selectedService?.name || 'Appointment',
-        date: pendingBookingDraft?.date || formatDateValue(dateValue),
-        time: pendingBookingDraft?.time || selectedSlotTime,
+        date: effectivePendingDraft?.date || formatDateValue(dateValue),
+        time: effectivePendingDraft?.time || selectedSlotTime,
         durationMinutes: selectedService?.duration_minutes || 60,
         businessName: business?.business_name || 'SALO',
-        notes: pendingBookingDraft?.notes || notes,
+        notes: effectivePendingDraft?.notes || notes,
         bookingToken: finalizedToken,
       });
+      await clearPendingBookingDraft();
       setPendingBookingDraft(null);
       setCheckoutUrl('');
       resetBookingForm();
@@ -937,7 +986,7 @@ export default function PublicBookingScreen({ route }) {
       return;
     }
 
-    setPendingBookingDraft({
+    const pendingDraft = {
       client_name: clientName.trim(),
       date: normalizedDate,
       time: selectedSlotTime,
@@ -949,7 +998,16 @@ export default function PublicBookingScreen({ route }) {
       business_slug: business.slug,
       service_id: selectedService.id,
       booking_token: bookingToken,
-    });
+    };
+
+    const isDraftSaved = await savePendingBookingDraft(pendingDraft);
+    if (!isDraftSaved) {
+      setIsSubmitting(false);
+      Alert.alert('Storage unavailable', 'Unable to save your pending payment details. Please try again.');
+      return;
+    }
+
+    setPendingBookingDraft(pendingDraft);
     setCheckoutUrl(checkoutData.checkoutUrl);
 
     const canOpen = await Linking.canOpenURL(checkoutData.checkoutUrl);
@@ -1002,6 +1060,16 @@ export default function PublicBookingScreen({ route }) {
           }}
         >
           {error}
+        </Text>
+      </ScreenContainer>
+    );
+  }
+
+  if (isPaymentCallbackRoute && !business && !successMessage) {
+    return (
+      <ScreenContainer centered style={{ padding: 24 }}>
+        <Text style={{ color: COLORS.textSecondary, textAlign: 'center' }}>
+          Finalizing your payment and booking...
         </Text>
       </ScreenContainer>
     );

@@ -2,6 +2,7 @@
   "expo": {
     "name": "salo-app",
     "slug": "salo-app",
+    "scheme": "salo",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",

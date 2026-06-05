@@ -45,6 +45,7 @@ const linking = {
       OnboardingWizard: 'onboarding',
       AppointmentPortal: 'appointment/:bookingToken',
       PublicBooking: 'book/:businessSlug',
+      PublicBookingPaymentCallback: 'public-booking-payment',
       MainTabs: 'app',
       AddBooking: 'booking/new',
       AddClient: 'client/new',
@@ -1486,6 +1487,11 @@ export default function AppNavigator() {
 
                   <Stack.Screen
                     name={ROUTES.PublicBooking}
+                    component={PublicBookingScreen}
+                  />
+
+                  <Stack.Screen
+                    name={ROUTES.PublicBookingPaymentCallback}
                     component={PublicBookingScreen}
                   />
                 </Stack.Navigator>

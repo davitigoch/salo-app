@@ -17,6 +17,7 @@ export const ROUTES = {
   PaymentSettings: 'PaymentSettings',
   NotificationSettings: 'NotificationSettings',
   PublicBooking: 'PublicBooking',
+  PublicBookingPaymentCallback: 'PublicBookingPaymentCallback',
   AppointmentPortal: 'AppointmentPortal',
   Home: 'Home',
   Bookings: 'Bookings',
