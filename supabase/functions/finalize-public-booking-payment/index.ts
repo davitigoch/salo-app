@@ -115,6 +115,161 @@ function errorResponse({
   );
 }
 
+function buildOwnerPushTitle() {
+  return 'New paid booking received';
+}
+
+function buildOwnerPushBody(service: string, date: string, time: string) {
+  return `${service || 'Appointment'} on ${date || 'your date'} at ${time || 'your time'}`;
+}
+
+async function enqueueOwnerPushNotification({
+  bookingId,
+  bookingToken,
+  bookingStatus,
+  businessId,
+  businessName,
+  ownerUserId,
+  service,
+  date,
+  time,
+}: {
+  bookingId: string;
+  bookingToken: string | null;
+  bookingStatus: string | null;
+  businessId: string;
+  businessName: string;
+  ownerUserId: string;
+  service: string;
+  date: string;
+  time: string;
+}) {
+  const step = 'owner_push_enqueue';
+
+  if (!bookingId || !businessId || !ownerUserId) {
+    console.error('[finalize-public-booking-payment] owner_push_enqueue_skipped_missing_fields', {
+      step,
+      bookingId,
+      businessId,
+      ownerUserId,
+    });
+    return;
+  }
+
+  const { data: tokens, error: tokenError } = await adminClient
+    .from('user_push_tokens')
+    .select('expo_push_token')
+    .eq('user_id', ownerUserId)
+    .eq('enabled', true);
+
+  if (tokenError) {
+    console.error('[finalize-public-booking-payment] owner_push_token_lookup_failed', {
+      step,
+      bookingId,
+      ownerUserId,
+      details: toErrorDetails(tokenError),
+    });
+    return;
+  }
+
+  const normalizedTokens = (tokens || [])
+    .map((row) => String(row?.expo_push_token || '').trim())
+    .filter(Boolean);
+
+  if (!normalizedTokens.length) {
+    console.log('[finalize-public-booking-payment] owner_push_enqueue_skipped_no_tokens', {
+      step,
+      bookingId,
+      ownerUserId,
+    });
+    return;
+  }
+
+  const { data: existingRows, error: existingRowsError } = await adminClient
+    .from('notification_outbox')
+    .select('recipient')
+    .eq('booking_id', bookingId)
+    .eq('event_type', 'booking.created')
+    .eq('notification_channel', 'push')
+    .in('notification_status', ['pending', 'processing', 'processed']);
+
+  if (existingRowsError) {
+    console.error('[finalize-public-booking-payment] owner_push_existing_outbox_lookup_failed', {
+      step,
+      bookingId,
+      details: toErrorDetails(existingRowsError),
+    });
+    return;
+  }
+
+  const existingRecipients = new Set(
+    (existingRows || []).map((row) => String(row?.recipient || '').trim()).filter(Boolean)
+  );
+
+  const manageAppointmentUrl = bookingToken
+    ? `https://salo.app/appointment/${bookingToken}`
+    : null;
+  const pushPayload = {
+    title: buildOwnerPushTitle(),
+    body: buildOwnerPushBody(service, date, time),
+    booking_id: bookingId,
+    event_type: 'booking.created',
+    manage_appointment_url: manageAppointmentUrl,
+    business_name: businessName || 'SALO',
+    service,
+    date,
+    time,
+    booking_status: bookingStatus,
+  };
+
+  const rowsToInsert = normalizedTokens
+    .filter((token) => !existingRecipients.has(token))
+    .map((token) => ({
+      business_id: businessId,
+      booking_id: bookingId,
+      user_id: ownerUserId,
+      notification_channel: 'push',
+      notification_status: 'pending',
+      event_type: 'booking.created',
+      template_key: 'booking.created',
+      recipient: token,
+      payload: pushPayload,
+      attempts: 0,
+      max_attempts: 3,
+      next_attempt_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }));
+
+  if (!rowsToInsert.length) {
+    console.log('[finalize-public-booking-payment] owner_push_enqueue_skipped_existing_rows', {
+      step,
+      bookingId,
+      tokenCount: normalizedTokens.length,
+    });
+    return;
+  }
+
+  const { error: insertOutboxError } = await adminClient
+    .from('notification_outbox')
+    .insert(rowsToInsert);
+
+  if (insertOutboxError) {
+    console.error('[finalize-public-booking-payment] owner_push_outbox_insert_failed', {
+      step,
+      bookingId,
+      rowCount: rowsToInsert.length,
+      details: toErrorDetails(insertOutboxError),
+    });
+    return;
+  }
+
+  console.log('[finalize-public-booking-payment] owner_push_enqueued', {
+    step,
+    bookingId,
+    rowCount: rowsToInsert.length,
+  });
+}
+
 Deno.serve(async (req) => {
   if (req.method !== 'POST') {
     const details = { method: req.method };
@@ -250,7 +405,7 @@ Deno.serve(async (req) => {
 
   const { data: business, error: businessError } = await adminClient
     .from('businesses')
-    .select('id, owner_user_id, slug, public_booking_enabled, deposits_enabled, deposit_percentage')
+    .select('id, owner_user_id, business_name, slug, public_booking_enabled, deposits_enabled, deposit_percentage')
     .eq('id', bookingDraft.business_id)
     .eq('public_booking_enabled', true)
     .single();
@@ -482,6 +637,18 @@ Deno.serve(async (req) => {
       });
     }
 
+    await enqueueOwnerPushNotification({
+      bookingId: insertedBooking.id,
+      bookingToken: insertedBooking.booking_token,
+      bookingStatus: insertedBooking.status,
+      businessId: business.id,
+      businessName: business.business_name || 'SALO',
+      ownerUserId: business.owner_user_id,
+      service: service.name,
+      date: bookingDraft.date,
+      time: bookingDraft.time,
+    });
+
     return new Response(
       JSON.stringify({
         bookingId: insertedBooking.id,
@@ -534,6 +701,18 @@ Deno.serve(async (req) => {
       details,
     });
   }
+
+  await enqueueOwnerPushNotification({
+    bookingId: insertedBooking.id,
+    bookingToken: insertedBooking.booking_token,
+    bookingStatus: insertedBooking.status,
+    businessId: business.id,
+    businessName: business.business_name || 'SALO',
+    ownerUserId: business.owner_user_id,
+    service: service.name,
+    date: bookingDraft.date,
+    time: bookingDraft.time,
+  });
 
   return new Response(
     JSON.stringify({
