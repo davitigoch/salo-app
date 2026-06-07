@@ -97,7 +97,9 @@ export default function BookingsScreen({ navigation }) {
     const isMuted = status === 'cancelled' || status === 'no_show';
 
     return (
-      <View
+      <TouchableOpacity
+        activeOpacity={0.95}
+        onPress={() => navigation.navigate(ROUTES.BookingDetail, { bookingId: booking.id })}
         style={{
           backgroundColor: isMuted ? '#171419' : COLORS.card,
           padding: 18,
@@ -239,7 +241,7 @@ export default function BookingsScreen({ navigation }) {
             </Text>
           </TouchableOpacity>
         </View>
-      </View>
+      </TouchableOpacity>
     );
   };
 

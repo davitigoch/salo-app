@@ -6,6 +6,7 @@ import BackButton from '../components/BackButton';
 import ScreenContainer from '../components/ScreenContainer';
 import { formatTimeDisplay, normalizeBusinessHours, timeToMinutes } from '../constants/availability';
 import { COLORS } from '../constants/colors';
+import { ROUTES } from '../constants/routes';
 import { useAuth } from '../context/AuthContext';
 import { useBookings } from '../context/BookingsContext';
 import { useStaff } from '../context/StaffContext';
@@ -66,12 +67,14 @@ function formatFullDate(date) {
   });
 }
 
-function BookingCard({ booking, staffName }) {
+function BookingCard({ booking, staffName, onPress }) {
   const status = booking.status || 'confirmed';
   const statusStyles = getStatusStyles(status);
 
   return (
-    <View
+    <TouchableOpacity
+      activeOpacity={0.95}
+      onPress={onPress}
       style={{
         backgroundColor: '#181820',
         borderColor: '#2E2B4A',
@@ -110,7 +113,7 @@ function BookingCard({ booking, staffName }) {
       </View>
 
       <Text style={{ color: COLORS.accent, marginTop: 8, fontWeight: '700' }}>{formatPrice(booking.price)}</Text>
-    </View>
+    </TouchableOpacity>
   );
 }
 
@@ -394,6 +397,7 @@ export default function DailyScheduleScreen({ navigation }) {
                         key={booking.id}
                         booking={booking}
                         staffName={staffLookup.get(booking.staff_member_id) || ''}
+                        onPress={() => navigation.navigate(ROUTES.BookingDetail, { bookingId: booking.id })}
                       />
                     ))
                   ) : (

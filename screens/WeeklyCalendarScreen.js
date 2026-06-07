@@ -5,6 +5,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import BackButton from '../components/BackButton';
 import ScreenContainer from '../components/ScreenContainer';
 import { COLORS } from '../constants/colors';
+import { ROUTES } from '../constants/routes';
 import { useBookings } from '../context/BookingsContext';
 import { useStaff } from '../context/StaffContext';
 
@@ -63,20 +64,13 @@ function formatPrice(value) {
   return `$${Number(value || 0).toFixed(2)}`;
 }
 
-function AppointmentRow({ booking, staffName }) {
+function AppointmentRow({ booking, staffName, onPress }) {
   const status = booking.status || 'confirmed';
   const statusStyles = getStatusStyles(status);
 
   return (
     <TouchableOpacity
-      onPress={() => {
-        Alert.alert(
-          booking.service,
-          `${booking.client_name}\n${booking.date} at ${booking.time}${
-            staffName ? `\nStaff: ${staffName}` : ''
-          }${booking.notes ? `\n\n${booking.notes}` : ''}`
-        );
-      }}
+      onPress={onPress}
       style={{
         backgroundColor: '#17171D',
         borderColor: '#2A2A33',
@@ -301,6 +295,7 @@ export default function WeeklyCalendarScreen({ navigation }) {
                       key={booking.id}
                       booking={booking}
                       staffName={staffMember?.name || ''}
+                      onPress={() => navigation.navigate(ROUTES.BookingDetail, { bookingId: booking.id })}
                     />
                   );
                 })
