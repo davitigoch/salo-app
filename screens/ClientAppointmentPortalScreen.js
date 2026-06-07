@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   KeyboardAvoidingView,
@@ -24,6 +24,8 @@ import {
 } from '../constants/bookingSlots';
 import { COLORS } from '../constants/colors';
 import { supabase } from '../constants/supabase';
+import * as Notifications from 'expo-notifications';
+import Constants from 'expo-constants';
 
 const TRACE_PREFIX = '[AppointmentPortalTrace]';
 
@@ -298,6 +300,52 @@ export default function ClientAppointmentPortalScreen({ route }) {
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [isRescheduling, setIsRescheduling] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
+
+  // Silently register customer push token so reminders and lifecycle
+  // events can be delivered to this device.  Failures are swallowed —
+  // push is best-effort and must never block the portal UI.
+  const registerCustomerPushToken = useCallback(async (token) => {
+    if (!token) {
+      return;
+    }
+    try {
+      const projectId =
+        Constants?.expoConfig?.extra?.eas?.projectId ||
+        Constants?.easConfig?.projectId ||
+        null;
+      if (!projectId) {
+        return;
+      }
+      const permResult = await Notifications.getPermissionsAsync();
+      let permStatus = permResult.status;
+      if (permStatus !== 'granted') {
+        const requested = await Notifications.requestPermissionsAsync({
+          ios: { allowAlert: true, allowBadge: true, allowSound: true },
+        });
+        permStatus = requested.status;
+      }
+      if (permStatus !== 'granted') {
+        return;
+      }
+      const tokenResponse = await Notifications.getExpoPushTokenAsync({ projectId });
+      const expoPushToken = tokenResponse?.data;
+      if (!expoPushToken || typeof expoPushToken !== 'string') {
+        return;
+      }
+      await supabase.rpc('register_customer_push_token', {
+        p_booking_token: token,
+        p_expo_push_token: expoPushToken,
+      });
+    } catch (_err) {
+      // Intentionally silent — push is best-effort.
+    }
+  }, []);
+
+  useEffect(() => {
+    if (bookingToken) {
+      registerCustomerPushToken(bookingToken);
+    }
+  }, [bookingToken, registerCustomerPushToken]);
 
   const appointmentDate = appointment?.date || '';
   const appointmentTime = appointment?.booking_time || '';

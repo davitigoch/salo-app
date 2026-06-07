@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Alert, SafeAreaView, ScrollView, View, Text, TouchableOpacity } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 
@@ -7,6 +7,7 @@ import ScreenContainer from '../components/ScreenContainer';
 import { COLORS } from '../constants/colors';
 import { ROUTES } from '../constants/routes';
 import { useAuth } from '../context/AuthContext';
+import { supabase } from '../constants/supabase';
 
 const DEV_TEST_BOOKING_TOKEN = '6c0be026934c441bb3deb8ec3ee2723b9ffb';
  
@@ -27,6 +28,11 @@ const SETTINGS = [
     route: ROUTES.NotificationSettings,
   },
   {
+    title: 'Notification Center',
+    description: 'View recent booking alerts and push notifications.',
+    route: ROUTES.NotificationCenter,
+  },
+  {
     title: 'Payment Settings',
     description: 'Deposits and card requirements.',
     route: ROUTES.PaymentSettings,
@@ -34,7 +40,7 @@ const SETTINGS = [
 ];
 
 export default function SettingsScreen({ navigation }) {
-  const { signOut, business, isBusinessLoading, businessError } = useAuth();
+  const { session, signOut, business, isBusinessLoading, businessError } = useAuth();
 
   const onSignOut = async () => {
     const { error } = await signOut();
@@ -42,6 +48,25 @@ export default function SettingsScreen({ navigation }) {
       Alert.alert('Sign out failed', error.message);
     }
   };
+
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  useEffect(() => {
+    const userId = session?.user?.id;
+    if (!userId) {
+      return;
+    }
+    supabase
+      .from('notification_outbox')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', userId)
+      .is('read_at', null)
+      .then(({ count, error: countError }) => {
+        if (!countError && typeof count === 'number') {
+          setUnreadCount(count);
+        }
+      });
+  }, [session?.user?.id]);
 
   const publicBookingLink = business?.slug
     ? `https://salo.app/book/${business.slug}`
@@ -116,7 +141,9 @@ export default function SettingsScreen({ navigation }) {
                       fontWeight: '600',
                     }}
                   >
-                    {item.title}
+                    {item.route === ROUTES.NotificationCenter && unreadCount > 0
+                      ? `${item.title} (${unreadCount})`
+                      : item.title}
                   </Text>
                   <Text
                     style={{

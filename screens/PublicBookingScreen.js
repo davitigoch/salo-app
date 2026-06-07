@@ -728,17 +728,36 @@ export default function PublicBookingScreen({ route }) {
         return;
       }
 
+      console.log('[PublicBookingScreen] finalize callback sessionId', sessionId);
+      console.log('[PublicBookingScreen] finalize effectivePendingDraft exists', Boolean(effectivePendingDraft));
+      console.log(
+        '[PublicBookingScreen] finalize effectivePendingDraft keys',
+        Object.keys(effectivePendingDraft || {})
+      );
+
       setIsSubmitting(true);
 
-      const { data, error: finalizeError } = await supabase.functions.invoke(
-        'finalize-public-booking-payment',
-        {
-          body: {
-            checkoutSessionId: sessionId,
-            bookingDraft: effectivePendingDraft,
+      let data;
+      let finalizeError;
+      try {
+        console.log('[PublicBookingScreen] before finalize invoke');
+        const invokeResult = await supabase.functions.invoke(
+          'finalize-public-booking-payment',
+          {
+            body: {
+              checkoutSessionId: sessionId,
+              bookingDraft: effectivePendingDraft,
+            },
           },
-        }
-      );
+        );
+        data = invokeResult?.data;
+        finalizeError = invokeResult?.error;
+        console.log('[PublicBookingScreen] after finalize invoke data', data);
+        console.log('[PublicBookingScreen] finalizeError object', finalizeError);
+      } catch (invokeError) {
+        console.error('[PublicBookingScreen] finalize invoke threw', invokeError);
+        throw invokeError;
+      }
 
       setIsSubmitting(false);
 

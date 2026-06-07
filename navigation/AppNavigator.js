@@ -32,6 +32,8 @@ import DailyScheduleScreen from '../screens/DailyScheduleScreen';
 import OnboardingWizardScreen from '../screens/OnboardingWizardScreen';
 import PaymentSettingsScreen from '../screens/PaymentSettingsScreen';
 import NotificationSettingsScreen from '../screens/NotificationSettingsScreen';
+import NotificationCenterScreen from '../screens/NotificationCenterScreen';
+import BookingDetailScreen from '../screens/BookingDetailScreen';
 import PublicBookingScreen from '../screens/PublicBookingScreen';
 import ClientAppointmentPortalScreen from '../screens/ClientAppointmentPortalScreen';
 import MainTabNavigator from './MainTabNavigator';
@@ -59,6 +61,8 @@ const linking = {
       DailySchedule: 'calendar/day',
       PaymentSettings: 'settings/payment',
       NotificationSettings: 'settings/notifications',
+      NotificationCenter: 'notifications',
+      BookingDetail: 'bookings/:bookingId',
     },
   },
 };
@@ -1476,6 +1480,14 @@ export default function AppNavigator() {
                       <Stack.Screen
                         name={ROUTES.NotificationSettings}
                         component={NotificationSettingsScreen}
+                      />
+                      <Stack.Screen
+                        name={ROUTES.NotificationCenter}
+                        component={NotificationCenterScreen}
+                      />
+                      <Stack.Screen
+                        name={ROUTES.BookingDetail}
+                        component={BookingDetailScreen}
                       />
                     </>
                   ) : null}

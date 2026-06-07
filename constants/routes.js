@@ -16,11 +16,13 @@ export const ROUTES = {
   DailySchedule: 'DailySchedule',
   PaymentSettings: 'PaymentSettings',
   NotificationSettings: 'NotificationSettings',
+  NotificationCenter: 'NotificationCenter',
   PublicBooking: 'PublicBooking',
   PublicBookingPaymentCallback: 'PublicBookingPaymentCallback',
   AppointmentPortal: 'AppointmentPortal',
   Home: 'Home',
   Bookings: 'Bookings',
+  BookingDetail: 'BookingDetail',
   Clients: 'Clients',
   Settings: 'Settings',
 };
