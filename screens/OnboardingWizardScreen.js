@@ -93,6 +93,7 @@ export default function OnboardingWizardScreen({ navigation }) {
     saveBusinessPaymentSettings,
     saveBusinessProfile,
     completeOnboarding,
+    signOut,
   } = useAuth();
   const { services, addService } = useServices();
   const { staff, addStaffMember } = useStaff();
@@ -372,6 +373,26 @@ export default function OnboardingWizardScreen({ navigation }) {
       return;
     }
     setStep((previous) => previous - 1);
+  };
+
+  const onExitOnboarding = () => {
+    Alert.alert(
+      'Exit setup?',
+      'You can come back later. This will log you out now.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Logout',
+          style: 'destructive',
+          onPress: async () => {
+            const { error } = await signOut();
+            if (error) {
+              Alert.alert('Logout failed', error.message);
+            }
+          },
+        },
+      ]
+    );
   };
 
   return (
@@ -678,6 +699,26 @@ export default function OnboardingWizardScreen({ navigation }) {
               />
             </View>
           </View>
+
+          {step === 0 ? (
+            <TouchableOpacity
+              onPress={onExitOnboarding}
+              disabled={isSaving}
+              style={{
+                marginTop: 12,
+                borderWidth: 1,
+                borderColor: '#5A252A',
+                backgroundColor: '#2A1618',
+                borderRadius: 14,
+                minHeight: 48,
+                alignItems: 'center',
+                justifyContent: 'center',
+                opacity: isSaving ? 0.6 : 1,
+              }}
+            >
+              <Text style={{ color: '#FCA5A5', fontWeight: '700' }}>Exit Setup & Logout</Text>
+            </TouchableOpacity>
+          ) : null}
 
         </ScrollView>
       </KeyboardAvoidingView>

@@ -13,6 +13,7 @@ import {
 import DateTimePicker from '@react-native-community/datetimepicker';
 
 import PrimaryButton from '../components/PrimaryButton';
+import BackButton from '../components/BackButton';
 import ScreenContainer from '../components/ScreenContainer';
 import {
   useNavigation,
@@ -282,6 +283,7 @@ function getPaymentStyles(status) {
 export default function ClientAppointmentPortalScreen({ route }) {
   const navigation = useNavigation();
   const bookingToken = route?.params?.bookingToken || route?.params?.booking_token;
+  const isInAppContext = Boolean(navigation?.canGoBack?.());
 
   useEffect(() => {
     console.log('[ClientAppointmentPortal] route params', {
@@ -799,6 +801,7 @@ export default function ClientAppointmentPortalScreen({ route }) {
 
   return (
     <ScreenContainer style={{ paddingTop: 66 }}>
+      {isInAppContext ? <BackButton navigation={navigation} /> : null}
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView
           contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 40 }}

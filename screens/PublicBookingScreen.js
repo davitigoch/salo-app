@@ -18,6 +18,7 @@ import * as ExpoLinking from 'expo-linking';
 import * as Clipboard from 'expo-clipboard';
 
 import PrimaryButton from '../components/PrimaryButton';
+import BackButton from '../components/BackButton';
 import {
   formatDateValue,
   generateAvailableTimeSlots,
@@ -358,6 +359,7 @@ export default function PublicBookingScreen({ route }) {
   const navigation = useNavigation();
   const businessSlug = route?.params?.businessSlug || route?.params?.slug;
   const isPaymentCallbackRoute = route?.name === ROUTES.PublicBookingPaymentCallback;
+  const isInAppContext = Boolean(navigation?.canGoBack?.());
   const [business, setBusiness] = useState(null);
   const [services, setServices] = useState([]);
   const [staffMembers, setStaffMembers] = useState([]);
@@ -1050,6 +1052,15 @@ export default function PublicBookingScreen({ route }) {
     setShowDatePicker(false);
   };
 
+  const onReturnToApp = () => {
+    if (navigation?.canGoBack?.()) {
+      navigation.goBack();
+      return;
+    }
+
+    navigation.navigate(ROUTES.MainTabs, { screen: ROUTES.Home });
+  };
+
   if (isLoading) {
     return (
       <ScreenContainer centered style={{ padding: 24 }}>
@@ -1096,6 +1107,7 @@ export default function PublicBookingScreen({ route }) {
 
   return (
     <ScreenContainer style={{ paddingTop: 62 }}>
+      {isInAppContext ? <BackButton navigation={navigation} /> : null}
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -1326,6 +1338,14 @@ export default function PublicBookingScreen({ route }) {
                 onPress={onBookAnotherAppointment}
                 style={{ marginTop: 12 }}
               />
+
+              {isPaymentCallbackRoute ? (
+                <PrimaryButton
+                  title="Return Home"
+                  onPress={onReturnToApp}
+                  style={{ marginTop: 10 }}
+                />
+              ) : null}
             </View>
           ) : null}
 
