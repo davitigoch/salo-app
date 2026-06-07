@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Alert, SafeAreaView, ScrollView, Text, View } from 'react-native';
+import { Alert, ScrollView, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import BackButton from '../components/BackButton';
 import PrimaryButton from '../components/PrimaryButton';

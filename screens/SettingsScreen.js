@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { Alert, SafeAreaView, ScrollView, View, Text, TouchableOpacity } from 'react-native';
+import { Alert, ScrollView, View, Text, TouchableOpacity } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import PrimaryButton from '../components/PrimaryButton';
 import ScreenContainer from '../components/ScreenContainer';

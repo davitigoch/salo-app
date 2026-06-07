@@ -1,7 +1,11 @@
 import React from 'react';
+import { View } from 'react-native';
 import * as Notifications from 'expo-notifications';
+import { StatusBar } from 'expo-status-bar';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import AppNavigator from './navigation/AppNavigator';
+import { COLORS } from './constants/colors';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -12,5 +16,12 @@ Notifications.setNotificationHandler({
 });
 
 export default function App() {
-  return <AppNavigator />;
+  return (
+    <SafeAreaProvider>
+      <View style={{ flex: 1, backgroundColor: COLORS.background }}>
+        <StatusBar style="light" backgroundColor={COLORS.background} />
+        <AppNavigator />
+      </View>
+    </SafeAreaProvider>
+  );
 }
