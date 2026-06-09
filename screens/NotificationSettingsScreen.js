@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Alert, SafeAreaView, ScrollView, Text, View } from 'react-native';
+import { Alert, ScrollView, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import BackButton from '../components/BackButton';
 import PrimaryButton from '../components/PrimaryButton';
@@ -13,6 +14,7 @@ import {
 } from '../notifications/bookingReminders';
 
 export default function NotificationSettingsScreen({ navigation }) {
+  const insets = useSafeAreaInsets();
   const { bookings } = useBookings();
   const [notificationStatus, setNotificationStatus] = useState('undetermined');
   const [isRequestingNotifications, setIsRequestingNotifications] = useState(false);
@@ -50,12 +52,14 @@ export default function NotificationSettingsScreen({ navigation }) {
   return (
     <ScreenContainer style={{ padding: 0 }}>
       <BackButton navigation={navigation} />
-      <SafeAreaView style={{ flex: 1 }}>
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 88, paddingBottom: 140 }}
-          contentInsetAdjustmentBehavior="automatic"
-        >
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{
+          paddingHorizontal: 24,
+          paddingTop: insets.top + 58,
+          paddingBottom: 140,
+        }}
+      >
           <Text style={{ color: COLORS.textPrimary, fontSize: 32, fontWeight: '700' }}>
             Notification Settings
           </Text>
@@ -84,8 +88,7 @@ export default function NotificationSettingsScreen({ navigation }) {
               onPress={onEnableReminders}
             />
           </View>
-        </ScrollView>
-      </SafeAreaView>
+      </ScrollView>
     </ScreenContainer>
   );
 }

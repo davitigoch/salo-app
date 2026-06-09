@@ -1,5 +1,6 @@
 import React from 'react';
 import { Alert, TouchableOpacity, View, Text } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import PrimaryButton from '../components/PrimaryButton';
 import ScreenContainer from '../components/ScreenContainer';
@@ -8,6 +9,7 @@ import { ROUTES } from '../constants/routes';
 import { useClients } from '../context/ClientsContext';
 
 export default function ClientsScreen({ navigation }) {
+  const insets = useSafeAreaInsets();
   const { clients, isClientsLoading, clientsError, deleteClient } = useClients();
 
   const onDeleteClient = (clientId) => {
@@ -33,7 +35,7 @@ export default function ClientsScreen({ navigation }) {
     <ScreenContainer
       style={{
         padding: 24,
-        paddingTop: 70,
+        paddingTop: insets.top + 10,
       }}
     >
       <Text

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Alert, SafeAreaView, ScrollView, Switch, Text, TextInput, View } from 'react-native';
+import { Alert, ScrollView, Switch, Text, TextInput, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import BackButton from '../components/BackButton';
 import PrimaryButton from '../components/PrimaryButton';
@@ -8,6 +9,7 @@ import { COLORS } from '../constants/colors';
 import { useAuth } from '../context/AuthContext';
 
 export default function PaymentSettingsScreen({ navigation }) {
+  const insets = useSafeAreaInsets();
   const { business, businessError, isBusinessLoading, saveBusinessPaymentSettings } = useAuth();
   const [depositsEnabled, setDepositsEnabled] = useState(false);
   const [depositPercentage, setDepositPercentage] = useState('30');
@@ -53,12 +55,14 @@ export default function PaymentSettingsScreen({ navigation }) {
   return (
     <ScreenContainer style={{ padding: 0 }}>
       <BackButton navigation={navigation} />
-      <SafeAreaView style={{ flex: 1 }}>
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 88, paddingBottom: 140 }}
-          contentInsetAdjustmentBehavior="automatic"
-        >
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{
+          paddingHorizontal: 24,
+          paddingTop: insets.top + 58,
+          paddingBottom: 140,
+        }}
+      >
           <Text style={{ color: COLORS.textPrimary, fontSize: 32, fontWeight: '700' }}>
             Payment Settings
           </Text>
@@ -172,8 +176,7 @@ export default function PaymentSettingsScreen({ navigation }) {
               style={{ marginTop: 14 }}
             />
           </View>
-        </ScrollView>
-      </SafeAreaView>
+      </ScrollView>
     </ScreenContainer>
   );
 }

@@ -1,6 +1,7 @@
 import React from 'react';
-import { Alert, SafeAreaView, ScrollView, View, Text, TouchableOpacity } from 'react-native';
+import { Alert, ScrollView, View, Text, TouchableOpacity } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import PrimaryButton from '../components/PrimaryButton';
 import ScreenContainer from '../components/ScreenContainer';
@@ -32,6 +33,7 @@ const SETTINGS = [
 ];
 
 export default function SettingsScreen({ navigation }) {
+  const insets = useSafeAreaInsets();
   const { signOut, business, isBusinessLoading, businessError } = useAuth();
 
   const onSignOut = async () => {
@@ -57,18 +59,16 @@ export default function SettingsScreen({ navigation }) {
 
   return (
     <ScreenContainer style={{ padding: 0 }}>
-      <SafeAreaView style={{ flex: 1 }}>
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingBottom: 140 }}
-          contentInsetAdjustmentBehavior="automatic"
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: 140 }}
+      >
+        <View
+          style={{
+            padding: 24,
+            paddingTop: insets.top + 10,
+          }}
         >
-          <View
-            style={{
-              padding: 24,
-              paddingTop: 70,
-            }}
-          >
             <Text
               style={{
                 color: COLORS.textPrimary,
@@ -246,9 +246,8 @@ export default function SettingsScreen({ navigation }) {
                 marginTop: 24,
               }}
             />
-          </View>
-        </ScrollView>
-      </SafeAreaView>
+        </View>
+      </ScrollView>
     </ScreenContainer>
   );
 }
