@@ -1,13 +1,20 @@
-import React from 'react';
+import React, { useMemo, useState } from 'react';
 import { Alert, TouchableOpacity, View, Text, ScrollView } from 'react-native';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import PrimaryButton from '../components/PrimaryButton';
 import ScreenContainer from '../components/ScreenContainer';
+import SearchField from '../components/SearchField';
 import { COLORS } from '../constants/colors';
 import { useBookings } from '../context/BookingsContext';
+import { useStaff } from '../context/StaffContext';
 import { ROUTES } from '../constants/routes';
+import {
+  filterBookings,
+  normalizeSearchQuery,
+  sortBookingsByAppointment,
+} from '../utils/bookings';
 
 const STATUS_OPTIONS = ['pending', 'confirmed', 'completed', 'cancelled', 'no_show'];
 
@@ -49,6 +56,28 @@ export default function BookingsScreen({ navigation }) {
   const insets = useSafeAreaInsets();
   const tabBarHeight = useBottomTabBarHeight();
   const { bookings, isBookingsLoading, bookingsError, deleteBooking, updateBooking } = useBookings();
+  const { staff } = useStaff();
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const staffById = useMemo(
+    () => Object.fromEntries((staff || []).map((member) => [member.id, member])),
+    [staff]
+  );
+
+  const sortedBookings = useMemo(
+    () => sortBookingsByAppointment(bookings),
+    [bookings]
+  );
+
+  const visibleBookings = useMemo(
+    () => filterBookings(sortedBookings, searchQuery, staffById),
+    [sortedBookings, searchQuery, staffById]
+  );
+
+  const hasSearchQuery = Boolean(normalizeSearchQuery(searchQuery));
+  const hasBookings = bookings.length > 0;
+  const showNoSearchResults = hasBookings && hasSearchQuery && !visibleBookings.length;
+  const showEmptyBookings = !isBookingsLoading && !bookingsError && !hasBookings;
 
   const onDeleteBooking = (bookingId) => {
     Alert.alert('Delete booking?', 'This action cannot be undone.', [
@@ -105,11 +134,18 @@ export default function BookingsScreen({ navigation }) {
         Bookings
       </Text>
 
+      <SearchField
+        value={searchQuery}
+        onChangeText={setSearchQuery}
+        placeholder="Search by client, service, date, or status"
+        style={{ marginTop: 16 }}
+      />
+
       <PrimaryButton
         title="+ New Booking"
         onPress={() => navigation.navigate(ROUTES.AddBooking)}
         style={{
-          marginTop: 16,
+          marginTop: 12,
         }}
       />
 
@@ -151,11 +187,52 @@ export default function BookingsScreen({ navigation }) {
         </Text>
       ) : null}
 
+      {showNoSearchResults ? (
+        <View
+          style={{
+            marginTop: 16,
+            backgroundColor: COLORS.card,
+            borderRadius: 18,
+            borderWidth: 1,
+            borderColor: '#2A2A33',
+            padding: 18,
+          }}
+        >
+          <Text style={{ color: COLORS.textPrimary, fontSize: 16, fontWeight: '700' }}>
+            No bookings match your search
+          </Text>
+          <Text style={{ color: COLORS.textSecondary, marginTop: 6, lineHeight: 20 }}>
+            Try a different client name, service, date, or status.
+          </Text>
+        </View>
+      ) : null}
+
+      {showEmptyBookings ? (
+        <View
+          style={{
+            marginTop: 16,
+            backgroundColor: COLORS.card,
+            borderRadius: 18,
+            borderWidth: 1,
+            borderColor: '#2A2A33',
+            padding: 18,
+          }}
+        >
+          <Text style={{ color: COLORS.textPrimary, fontSize: 16, fontWeight: '700' }}>
+            No bookings yet
+          </Text>
+          <Text style={{ color: COLORS.textSecondary, marginTop: 6, lineHeight: 20 }}>
+            Create your first appointment to start managing your calendar.
+          </Text>
+        </View>
+      ) : null}
+
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: tabBarHeight + insets.bottom + 24 }}
+        keyboardShouldPersistTaps="handled"
       >
-        {bookings.map((booking) => {
+        {visibleBookings.map((booking) => {
           const status = booking.status || 'confirmed';
           const statusStyles = getStatusStyles(status);
           const isMuted = status === 'cancelled' || status === 'no_show';

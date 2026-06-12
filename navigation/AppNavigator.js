@@ -178,7 +178,8 @@ export default function AppNavigator() {
       .from('bookings')
       .select('id, client_name, service, date, time, status, price, notes, staff_member_id, booking_metadata, user_id, created_at')
       .eq('user_id', session.user.id)
-      .order('created_at', { ascending: false });
+      .order('date', { ascending: true })
+      .order('time', { ascending: true });
 
     if (error) {
       setBookingsError(error.message);
