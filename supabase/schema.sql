@@ -553,29 +553,31 @@ with check (auth.uid() = user_id);
 
 create policy "Public can create bookings for enabled businesses"
 on public.bookings
+as permissive
 for insert
+to anon
 with check (
   booking_source = 'public'
   and status = 'pending'
+  and business_id is not null
   and user_id is not null
-  and business_slug is not null
-  and (
-    staff_member_id is null
-    or exists (
-      select 1
-      from public.staff_members sm
-      where sm.id = staff_member_id
-        and sm.business_id = business_id
-        and sm.is_active = true
-    )
-  )
   and exists (
     select 1
     from public.businesses b
-    where b.slug = business_slug
-      and b.owner_user_id = user_id
+    where b.id = bookings.business_id
       and b.public_booking_enabled = true
-      and (business_id is null or business_id = b.id)
+      and b.owner_user_id = bookings.user_id
+      and (bookings.business_slug is null or b.slug = bookings.business_slug)
+  )
+  and (
+    bookings.staff_member_id is null
+    or exists (
+      select 1
+      from public.staff_members sm
+      where sm.id = bookings.staff_member_id
+        and sm.business_id = bookings.business_id
+        and sm.is_active = true
+    )
   )
 );
 

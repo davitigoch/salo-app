@@ -13,7 +13,9 @@ import {
 
 import ScreenContainer from '../components/ScreenContainer';
 import PrimaryButton from '../components/PrimaryButton';
+import { getBookingSiteBaseUrl, getPublicBookingUrl } from '../constants/bookingLink';
 import { COLORS } from '../constants/colors';
+import { ROUTES } from '../constants/routes';
 import {
   DEFAULT_BUSINESS_HOURS,
   WEEKDAY_LABELS,
@@ -137,9 +139,11 @@ export default function OnboardingWizardScreen({ navigation }) {
 
   const bookingUrl = useMemo(() => {
     if (!business?.slug) {
-      return 'https://your-domain.com/booking/<slug>';
+      const baseUrl = getBookingSiteBaseUrl();
+      return baseUrl ? `${baseUrl}/book/your-salon-slug` : '';
     }
-    return `https://your-domain.com/${business.slug}`;
+
+    return getPublicBookingUrl(business.slug);
   }, [business?.slug]);
 
   const completedFlags = useMemo(() => {

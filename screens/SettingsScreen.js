@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import PrimaryButton from '../components/PrimaryButton';
 import ScreenContainer from '../components/ScreenContainer';
+import { getPublicBookingUrl } from '../constants/bookingLink';
 import { COLORS } from '../constants/colors';
 import { ROUTES } from '../constants/routes';
 import { useAuth } from '../context/AuthContext';
@@ -43,9 +44,7 @@ export default function SettingsScreen({ navigation }) {
     }
   };
 
-  const publicBookingLink = business?.slug
-    ? `https://salo.app/${business.slug}`
-    : '';
+  const publicBookingLink = getPublicBookingUrl(business?.slug);
 
   const onCopyPublicLink = async () => {
     if (!publicBookingLink) {
@@ -200,7 +199,7 @@ export default function SettingsScreen({ navigation }) {
                       fontSize: 12,
                     }}
                   >
-                    Production URL
+                    Public booking URL
                   </Text>
                   <Text
                     style={{
