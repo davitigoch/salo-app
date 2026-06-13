@@ -2,6 +2,8 @@ export const ROUTES = {
   AuthLoading: 'AuthLoading',
   Welcome: 'Welcome',
   Login: 'Login',
+  ForgotPassword: 'ForgotPassword',
+  ResetPassword: 'ResetPassword',
   OnboardingWizard: 'OnboardingWizard',
   MainTabs: 'MainTabs',
   AddBooking: 'AddBooking',

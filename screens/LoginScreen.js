@@ -4,9 +4,10 @@ import { Alert, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import PrimaryButton from '../components/PrimaryButton';
 import ScreenContainer from '../components/ScreenContainer';
 import { COLORS } from '../constants/colors';
+import { ROUTES } from '../constants/routes';
 import { useAuth } from '../context/AuthContext';
 
-export default function LoginScreen() {
+export default function LoginScreen({ navigation }) {
   const { signIn, signUp } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -167,6 +168,25 @@ export default function LoginScreen() {
             : 'Need an account? Sign Up'}
         </Text>
       </TouchableOpacity>
+
+      {!isSignUpMode ? (
+        <TouchableOpacity
+          onPress={() => navigation.navigate(ROUTES.ForgotPassword)}
+          style={{
+            marginTop: 18,
+            alignItems: 'center',
+          }}
+        >
+          <Text
+            style={{
+              color: COLORS.accent,
+              fontWeight: '600',
+            }}
+          >
+            Forgot password?
+          </Text>
+        </TouchableOpacity>
+      ) : null}
     </ScreenContainer>
   );
 }

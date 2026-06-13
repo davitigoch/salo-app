@@ -1,9 +1,16 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { NavigationContainer } from '@react-navigation/native';
+import * as Linking from 'expo-linking';
+import { NavigationContainer, getStateFromPath as getDefaultStateFromPath } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
 import { DEFAULT_BUSINESS_HOURS, normalizeBusinessHours } from '../constants/availability';
+import {
+  createSessionFromResetLink,
+  getPasswordResetRedirectUrl,
+  isPasswordResetUrl,
+  isPasswordResetPath,
+} from '../constants/authLinking';
 import { ROUTES } from '../constants/routes';
 import {
   cancelBookingReminders,
@@ -18,6 +25,8 @@ import { StaffProvider } from '../context/StaffContext';
 import AuthLoadingScreen from '../screens/AuthLoadingScreen';
 import WelcomeScreen from '../screens/WelcomeScreen';
 import LoginScreen from '../screens/LoginScreen';
+import ForgotPasswordScreen from '../screens/ForgotPasswordScreen';
+import ResetPasswordScreen from '../screens/ResetPasswordScreen';
 import AddBookingScreen from '../screens/AddBookingScreen';
 import AddClientScreen from '../screens/AddClientScreen';
 import ServicesScreen from '../screens/ServicesScreen';
@@ -35,31 +44,63 @@ import PublicBookingScreen from '../screens/PublicBookingScreen';
 import ClientAppointmentPortalScreen from '../screens/ClientAppointmentPortalScreen';
 import MainTabNavigator from './MainTabNavigator';
 
-const linking = {
-  config: {
-    screens: {
-      AuthLoading: 'loading',
-      Welcome: '',
-      Login: 'login',
-      OnboardingWizard: 'onboarding',
-      AppointmentPortal: 'appointment/:booking_token',
-      PublicBooking: ':slug',
-      MainTabs: 'app',
-      AddBooking: 'booking/new',
-      AddClient: 'client/new',
-      Services: 'services',
-      AddService: 'service/new',
-      Staff: 'team',
-      AddStaff: 'team/new',
-      StaffAvailability: 'team/availability',
-      BusinessHours: 'hours',
-      WeeklyCalendar: 'calendar',
-      DailySchedule: 'calendar/day',
-      PaymentSettings: 'settings/payment',
-      NotificationSettings: 'settings/notifications',
-    },
-  },
+const LINKING_SCREEN_CONFIG = {
+  AuthLoading: 'loading',
+  Welcome: '',
+  Login: 'login',
+  ForgotPassword: 'forgot-password',
+  ResetPassword: 'reset-password',
+  OnboardingWizard: 'onboarding',
+  AppointmentPortal: 'appointment/:booking_token',
+  PublicBooking: 'book/:slug',
+  MainTabs: 'app',
+  AddBooking: 'booking/new',
+  AddClient: 'client/new',
+  Services: 'services',
+  AddService: 'service/new',
+  Staff: 'team',
+  AddStaff: 'team/new',
+  StaffAvailability: 'team/availability',
+  BusinessHours: 'hours',
+  WeeklyCalendar: 'calendar',
+  DailySchedule: 'calendar/day',
+  PaymentSettings: 'settings/payment',
+  NotificationSettings: 'settings/notifications',
 };
+
+function normalizeLinkingPath(path) {
+  if (path == null || path === '') {
+    return '';
+  }
+
+  return String(path).replace(/^\/+/, '').replace(/\/+$/, '');
+}
+
+function isIgnorableRootLinkingPath(path) {
+  const normalized = normalizeLinkingPath(path);
+
+  return normalized === '' || normalized === '--';
+}
+
+function isIgnorableRootLinkingUrl(url) {
+  if (!url) {
+    return true;
+  }
+
+  if (isPasswordResetUrl(url)) {
+    return false;
+  }
+
+  const withoutHash = url.split('#')[0].split('?')[0];
+
+  if (/^(exp|salo):\/\/[^/?#]*\/?(--\/?)?$/i.test(withoutHash)) {
+    return true;
+  }
+
+  const parsed = Linking.parse(url);
+
+  return isIgnorableRootLinkingPath(parsed?.path ?? '');
+}
 
 const Stack = createNativeStackNavigator();
 const BUSINESS_SELECT_COLUMNS = 'id, owner_user_id, business_name, slug, description, timezone, services, public_booking_enabled, onboarding_completed, deposits_enabled, deposit_percentage, require_card_on_booking, stripe_account_id, stripe_charges_enabled, stripe_payouts_enabled, created_at';
@@ -121,6 +162,102 @@ export default function AppNavigator() {
   const [isBusinessHoursLoading, setIsBusinessHoursLoading] = useState(false);
   const [businessHoursError, setBusinessHoursError] = useState('');
   const [businessBootstrapError, setBusinessBootstrapError] = useState('');
+  const [isPasswordRecoveryPending, setIsPasswordRecoveryPending] = useState(false);
+  const [passwordRecoveryLinkError, setPasswordRecoveryLinkError] = useState('');
+
+  const handlePasswordResetUrl = useCallback(async (url) => {
+    if (!isPasswordResetUrl(url)) {
+      return false;
+    }
+
+    console.log('[SALO] reset deep link detected', url);
+    console.log('[SALO] navigating to ResetPassword');
+    setIsPasswordRecoveryPending(true);
+
+    const { session: recoverySession, error } = await createSessionFromResetLink(url);
+
+    if (error) {
+      setPasswordRecoveryLinkError(error.message);
+      setSession(null);
+      return true;
+    }
+
+    setPasswordRecoveryLinkError('');
+
+    if (recoverySession) {
+      setSession(recoverySession);
+    }
+
+    return true;
+  }, []);
+
+  const handlePasswordResetUrlRef = useRef(handlePasswordResetUrl);
+  handlePasswordResetUrlRef.current = handlePasswordResetUrl;
+
+  const linking = useMemo(
+    () => ({
+      prefixes: [Linking.createURL('/'), 'salo://', 'exp://'],
+      config: {
+        screens: LINKING_SCREEN_CONFIG,
+      },
+      getStateFromPath(path, options) {
+        console.log('[SALO] resolved linking path:', path);
+
+        if (isPasswordResetPath(path)) {
+          return {
+            routes: [{ name: ROUTES.ResetPassword }],
+          };
+        }
+
+        if (isIgnorableRootLinkingPath(path)) {
+          console.log('[SALO] ignoring root Expo URL');
+          return undefined;
+        }
+
+        return getDefaultStateFromPath(path, {
+          ...options,
+          screens: LINKING_SCREEN_CONFIG,
+        });
+      },
+      async getInitialURL() {
+        const url = await Linking.getInitialURL();
+        console.log('[SALO] initial URL:', url);
+
+        if (url && isPasswordResetUrl(url)) {
+          await handlePasswordResetUrlRef.current(url);
+          return url;
+        }
+
+        if (isIgnorableRootLinkingUrl(url)) {
+          console.log('[SALO] ignoring root Expo URL');
+          return null;
+        }
+
+        return url;
+      },
+      subscribe(listener) {
+        const subscription = Linking.addEventListener('url', ({ url }) => {
+          if (isPasswordResetUrl(url)) {
+            handlePasswordResetUrlRef.current(url);
+            listener(url);
+            return;
+          }
+
+          if (isIgnorableRootLinkingUrl(url)) {
+            console.log('[SALO] ignoring root Expo URL');
+            return;
+          }
+
+          listener(url);
+        });
+
+        return () => {
+          subscription.remove();
+        };
+      },
+    }),
+    []
+  );
 
   useEffect(() => {
     let isMounted = true;
@@ -152,10 +289,20 @@ export default function AppNavigator() {
         hasSession: Boolean(nextSession),
         userId: nextSession?.user?.id || null,
       });
+
+      if (event === 'PASSWORD_RECOVERY') {
+        setIsPasswordRecoveryPending(true);
+        setPasswordRecoveryLinkError('');
+      }
+
       setSession(nextSession);
+
       if (event === 'SIGNED_OUT') {
         setUnauthStartRoute(ROUTES.Login);
+        setIsPasswordRecoveryPending(false);
+        setPasswordRecoveryLinkError('');
       }
+
       setIsAuthLoading(false);
     });
 
@@ -1161,6 +1308,35 @@ export default function AppNavigator() {
     return { error: null };
   }, [business?.id, fetchStaffAvailability, session?.user?.id]);
 
+  const requestPasswordReset = async (email) => {
+    const redirectTo = getPasswordResetRedirectUrl();
+
+    if (typeof __DEV__ !== 'undefined' && __DEV__) {
+      console.log('[SALO] resetPasswordForEmail redirectTo:', redirectTo);
+    }
+
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo,
+    });
+    return { error };
+  };
+
+  const updatePassword = async (password) => {
+    const { error } = await supabase.auth.updateUser({ password });
+
+    if (!error) {
+      setIsPasswordRecoveryPending(false);
+      setPasswordRecoveryLinkError('');
+    }
+
+    return { error };
+  };
+
+  const clearPasswordRecovery = () => {
+    setIsPasswordRecoveryPending(false);
+    setPasswordRecoveryLinkError('');
+  };
+
   const signIn = async ({ email, password }) => {
     const { error } = await supabase.auth.signInWithPassword({
       email,
@@ -1191,6 +1367,8 @@ export default function AppNavigator() {
       setStaff([]);
       setStaffAvailability([]);
       setUnauthStartRoute(ROUTES.Login);
+      setIsPasswordRecoveryPending(false);
+      setPasswordRecoveryLinkError('');
     }
     return { error };
   };
@@ -1212,6 +1390,11 @@ export default function AppNavigator() {
       saveBusinessProfile,
       updatePublicBookingEnabled,
       completeOnboarding,
+      requestPasswordReset,
+      updatePassword,
+      clearPasswordRecovery,
+      passwordRecoveryLinkError,
+      isPasswordRecoveryPending,
       signIn,
       signUp,
       signOut,
@@ -1231,6 +1414,11 @@ export default function AppNavigator() {
       saveBusinessProfile,
       updatePublicBookingEnabled,
       completeOnboarding,
+      requestPasswordReset,
+      updatePassword,
+      clearPasswordRecovery,
+      passwordRecoveryLinkError,
+      isPasswordRecoveryPending,
     ]
   );
 
@@ -1317,23 +1505,31 @@ export default function AppNavigator() {
                   />
                 ) : null}
 
-                  {!isAuthLoading && !session ? (
+                  {!isAuthLoading && !session && !isPasswordRecoveryPending ? (
                     <>
                       {unauthStartRoute === ROUTES.Login ? (
                         <>
                           <Stack.Screen name={ROUTES.Login} component={LoginScreen} />
                           <Stack.Screen name={ROUTES.Welcome} component={WelcomeScreen} />
+                          <Stack.Screen
+                            name={ROUTES.ForgotPassword}
+                            component={ForgotPasswordScreen}
+                          />
                         </>
                       ) : (
                         <>
                           <Stack.Screen name={ROUTES.Welcome} component={WelcomeScreen} />
                           <Stack.Screen name={ROUTES.Login} component={LoginScreen} />
+                          <Stack.Screen
+                            name={ROUTES.ForgotPassword}
+                            component={ForgotPasswordScreen}
+                          />
                         </>
                       )}
                     </>
                   ) : null}
 
-                  {!isAuthLoading && session && (isBusinessLoading || !business) ? (
+                  {!isAuthLoading && session && !isPasswordRecoveryPending && (isBusinessLoading || !business) ? (
                     <Stack.Screen name={ROUTES.AuthLoading}>
                       {(props) => (
                         <AuthLoadingScreen
@@ -1346,14 +1542,14 @@ export default function AppNavigator() {
                     </Stack.Screen>
                   ) : null}
 
-                  {!isAuthLoading && session && !isBusinessLoading && business && !business.onboarding_completed ? (
+                  {!isAuthLoading && session && !isPasswordRecoveryPending && !isBusinessLoading && business && !business.onboarding_completed ? (
                     <Stack.Screen
                       name={ROUTES.OnboardingWizard}
                       component={OnboardingWizardScreen}
                     />
                   ) : null}
 
-                  {!isAuthLoading && session && !isBusinessLoading && business?.onboarding_completed ? (
+                  {!isAuthLoading && session && !isPasswordRecoveryPending && !isBusinessLoading && business?.onboarding_completed ? (
                     <>
                       <Stack.Screen
                         name={ROUTES.MainTabs}
@@ -1413,6 +1609,11 @@ export default function AppNavigator() {
                   <Stack.Screen
                     name={ROUTES.AppointmentPortal}
                     component={ClientAppointmentPortalScreen}
+                  />
+
+                  <Stack.Screen
+                    name={ROUTES.ResetPassword}
+                    component={ResetPasswordScreen}
                   />
 
                   <Stack.Screen

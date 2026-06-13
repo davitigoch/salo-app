@@ -12,6 +12,7 @@
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
+    "scheme": "salo",
     "ios": {
       "supportsTablet": true
     },
