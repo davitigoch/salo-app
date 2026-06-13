@@ -103,6 +103,9 @@ function getQuickActionAccent(label) {
   if (label === 'Clients') {
     return { icon: '#86EFAC', border: '#2D5A46' };
   }
+  if (label === 'Analytics') {
+    return { icon: '#FBBF24', border: '#6B4C1A' };
+  }
   return { icon: '#D4D4D8', border: '#4B4B55' };
 }
 
@@ -610,7 +613,7 @@ export default function HomeScreen({ navigation }) {
             { label: 'New Booking', icon: 'add-circle-outline', route: ROUTES.AddBooking },
             { label: 'Calendar', icon: 'calendar-outline', route: ROUTES.WeeklyCalendar },
             { label: 'Clients', icon: 'people-outline', route: ROUTES.Clients },
-            { label: 'Settings', icon: 'settings-outline', route: ROUTES.Settings },
+            { label: 'Analytics', icon: 'bar-chart-outline', route: ROUTES.Analytics },
           ].map((action) => (
             <TouchableOpacity
               key={action.label}

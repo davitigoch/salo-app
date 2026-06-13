@@ -12,6 +12,11 @@ import { useAuth } from '../context/AuthContext';
  
 const SETTINGS = [
   {
+    title: 'Analytics',
+    description: 'Revenue, appointments, and top performers.',
+    route: ROUTES.Analytics,
+  },
+  {
     title: 'Business Hours',
     description: 'Control your weekly booking availability.',
     route: ROUTES.BusinessHours,
