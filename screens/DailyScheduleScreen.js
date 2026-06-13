@@ -6,6 +6,7 @@ import BackButton from '../components/BackButton';
 import ScreenContainer from '../components/ScreenContainer';
 import { formatTimeDisplay, normalizeBusinessHours, timeToMinutes } from '../constants/availability';
 import { COLORS } from '../constants/colors';
+import { ROUTES } from '../constants/routes';
 import { useAuth } from '../context/AuthContext';
 import { useBookings } from '../context/BookingsContext';
 import { useStaff } from '../context/StaffContext';
@@ -66,12 +67,18 @@ function formatFullDate(date) {
   });
 }
 
-function BookingCard({ booking, staffName }) {
+function BookingCard({ booking, staffName, navigation }) {
   const status = booking.status || 'confirmed';
   const statusStyles = getStatusStyles(status);
 
   return (
-    <View
+    <TouchableOpacity
+      onPress={() =>
+        navigation.navigate(ROUTES.BookingDetail, {
+          bookingId: booking.id,
+        })
+      }
+      activeOpacity={0.9}
       style={{
         backgroundColor: '#181820',
         borderColor: '#2E2B4A',
@@ -110,7 +117,7 @@ function BookingCard({ booking, staffName }) {
       </View>
 
       <Text style={{ color: COLORS.accent, marginTop: 8, fontWeight: '700' }}>{formatPrice(booking.price)}</Text>
-    </View>
+    </TouchableOpacity>
   );
 }
 
@@ -205,6 +212,15 @@ export default function DailyScheduleScreen({ navigation }) {
       });
   }, [bookings, selectedDate, selectedStaffId]);
 
+  const daySummary = useMemo(() => {
+    const appointmentCount = dayBookings.length;
+    const revenue = dayBookings
+      .filter((booking) => (booking.status || 'confirmed') !== 'cancelled')
+      .reduce((sum, booking) => sum + Number(booking.price || 0), 0);
+
+    return { appointmentCount, revenue };
+  }, [dayBookings]);
+
   const slotMap = useMemo(() => {
     const byHour = new Map();
 
@@ -256,6 +272,48 @@ export default function DailyScheduleScreen({ navigation }) {
       >
         <Text style={{ color: COLORS.textPrimary, fontSize: 30, fontWeight: '700' }}>Daily Schedule</Text>
         <Text style={{ color: COLORS.textSecondary, marginTop: 8 }}>{formatFullDate(selectedDate)}</Text>
+
+        <View
+          style={{
+            flexDirection: 'row',
+            marginTop: 14,
+            marginBottom: 4,
+          }}
+        >
+          <View
+            style={{
+              flex: 1,
+              backgroundColor: COLORS.card,
+              borderColor: '#324665',
+              borderWidth: 1,
+              borderRadius: 14,
+              padding: 14,
+              marginRight: 6,
+            }}
+          >
+            <Text style={{ color: '#8B8BA2', fontSize: 10, letterSpacing: 0.35 }}>APPOINTMENTS</Text>
+            <Text style={{ color: COLORS.textPrimary, fontSize: 22, fontWeight: '800', marginTop: 8 }}>
+              {daySummary.appointmentCount}
+            </Text>
+          </View>
+
+          <View
+            style={{
+              flex: 1,
+              backgroundColor: COLORS.card,
+              borderColor: '#3B325B',
+              borderWidth: 1,
+              borderRadius: 14,
+              padding: 14,
+              marginLeft: 6,
+            }}
+          >
+            <Text style={{ color: '#8B8BA2', fontSize: 10, letterSpacing: 0.35 }}>REVENUE</Text>
+            <Text style={{ color: COLORS.textPrimary, fontSize: 22, fontWeight: '800', marginTop: 8 }}>
+              ${daySummary.revenue.toFixed(0)}
+            </Text>
+          </View>
+        </View>
 
         <View
           style={{
@@ -358,6 +416,18 @@ export default function DailyScheduleScreen({ navigation }) {
               This day is marked closed in business hours.
             </Text>
           </View>
+        ) : !dayBookings.length && !isBookingsLoading ? (
+          <View
+            style={{
+              backgroundColor: COLORS.card,
+              borderColor: '#2D2D38',
+              borderWidth: 1,
+              borderRadius: 16,
+              padding: 18,
+            }}
+          >
+            <Text style={{ color: COLORS.textPrimary, fontWeight: '700' }}>No appointments today.</Text>
+          </View>
         ) : (
           hourlySlots.map((slotMinute) => {
             const slotBookings = slotMap.get(slotMinute) || [];
@@ -394,6 +464,7 @@ export default function DailyScheduleScreen({ navigation }) {
                         key={booking.id}
                         booking={booking}
                         staffName={staffLookup.get(booking.staff_member_id) || ''}
+                        navigation={navigation}
                       />
                     ))
                   ) : (

@@ -12,11 +12,14 @@ import {
   isPasswordResetPath,
 } from '../constants/authLinking';
 import { ROUTES } from '../constants/routes';
+import { supabase } from '../constants/supabase';
 import {
   cancelBookingReminders,
   syncBookingReminders,
 } from '../notifications/bookingReminders';
-import { supabase } from '../constants/supabase';
+import {
+  syncClientFromConfirmedPublicBooking,
+} from '../utils/clients';
 import { AuthProvider } from '../context/AuthContext';
 import { BookingsProvider } from '../context/BookingsContext';
 import { ClientsProvider } from '../context/ClientsContext';
@@ -30,6 +33,7 @@ import ResetPasswordScreen from '../screens/ResetPasswordScreen';
 import AddBookingScreen from '../screens/AddBookingScreen';
 import BookingDetailScreen from '../screens/BookingDetailScreen';
 import AddClientScreen from '../screens/AddClientScreen';
+import ClientDetailScreen from '../screens/ClientDetailScreen';
 import ServicesScreen from '../screens/ServicesScreen';
 import AddServiceScreen from '../screens/AddServiceScreen';
 import StaffScreen from '../screens/StaffScreen';
@@ -981,6 +985,8 @@ export default function AppNavigator() {
 
     setBookingsError('');
 
+    const previousBooking = bookings.find((booking) => booking.id === bookingId);
+
     const { data, error } = await supabase
       .from('bookings')
       .update(bookingInput)
@@ -999,6 +1005,19 @@ export default function AppNavigator() {
         booking.id === bookingId ? data : booking
       )
     );
+
+    if (
+      bookingInput.status === 'confirmed'
+      && previousBooking?.status === 'pending'
+      && data?.booking_source === 'public'
+    ) {
+      await syncClientFromConfirmedPublicBooking({
+        booking: data,
+        clients,
+        addClient,
+        updateClient,
+      });
+    }
 
     return { error: null, data };
   };
@@ -1569,6 +1588,10 @@ export default function AppNavigator() {
                       <Stack.Screen
                         name={ROUTES.AddClient}
                         component={AddClientScreen}
+                      />
+                      <Stack.Screen
+                        name={ROUTES.ClientDetail}
+                        component={ClientDetailScreen}
                       />
                       <Stack.Screen
                         name={ROUTES.Services}

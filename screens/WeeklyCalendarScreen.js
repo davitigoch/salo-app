@@ -1,10 +1,11 @@
 import React, { useMemo, useState } from 'react';
-import { Alert, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 
 import BackButton from '../components/BackButton';
 import ScreenContainer from '../components/ScreenContainer';
 import { COLORS } from '../constants/colors';
+import { ROUTES } from '../constants/routes';
 import { useBookings } from '../context/BookingsContext';
 import { useStaff } from '../context/StaffContext';
 
@@ -63,20 +64,18 @@ function formatPrice(value) {
   return `$${Number(value || 0).toFixed(2)}`;
 }
 
-function AppointmentRow({ booking, staffName }) {
+function AppointmentRow({ booking, staffName, navigation }) {
   const status = booking.status || 'confirmed';
   const statusStyles = getStatusStyles(status);
 
   return (
     <TouchableOpacity
-      onPress={() => {
-        Alert.alert(
-          booking.service,
-          `${booking.client_name}\n${booking.date} at ${booking.time}${
-            staffName ? `\nStaff: ${staffName}` : ''
-          }${booking.notes ? `\n\n${booking.notes}` : ''}`
-        );
-      }}
+      onPress={() =>
+        navigation.navigate(ROUTES.BookingDetail, {
+          bookingId: booking.id,
+        })
+      }
+      activeOpacity={0.9}
       style={{
         backgroundColor: '#17171D',
         borderColor: '#2A2A33',
@@ -130,6 +129,7 @@ export default function WeeklyCalendarScreen({ navigation }) {
   const { bookings, fetchBookings, isBookingsLoading, bookingsError } = useBookings();
   const { staff } = useStaff();
   const [selectedWeekStart, setSelectedWeekStart] = useState(() => getStartOfWeek(new Date()));
+  const [showEmptyDays, setShowEmptyDays] = useState(false);
 
   useFocusEffect(
     React.useCallback(() => {
@@ -182,6 +182,11 @@ export default function WeeklyCalendarScreen({ navigation }) {
       bookings: day.bookings.sort((a, b) => a.time.localeCompare(b.time)),
     }));
   }, [bookings, selectedWeekStart]);
+
+  const visibleDayCards = useMemo(
+    () => (showEmptyDays ? dayCards : dayCards.filter((day) => day.bookings.length > 0)),
+    [dayCards, showEmptyDays]
+  );
 
   const goToPreviousWeek = () => {
     setSelectedWeekStart((previous) => new Date(previous.getTime() - 7 * DAY_MS));
@@ -244,6 +249,24 @@ export default function WeeklyCalendarScreen({ navigation }) {
           </TouchableOpacity>
         </View>
 
+        <TouchableOpacity
+          onPress={() => setShowEmptyDays((previous) => !previous)}
+          style={{
+            alignSelf: 'flex-start',
+            backgroundColor: showEmptyDays ? '#231B3A' : '#15151B',
+            borderColor: showEmptyDays ? COLORS.accent : '#2D2D38',
+            borderWidth: 1,
+            borderRadius: 999,
+            paddingHorizontal: 14,
+            paddingVertical: 8,
+            marginBottom: 14,
+          }}
+        >
+          <Text style={{ color: COLORS.textPrimary, fontWeight: '600', fontSize: 13 }}>
+            {showEmptyDays ? 'Hide empty days' : 'Show empty days'}
+          </Text>
+        </TouchableOpacity>
+
         {isBookingsLoading ? (
           <Text style={{ color: COLORS.textSecondary, marginBottom: 12 }}>Loading appointments...</Text>
         ) : null}
@@ -252,7 +275,26 @@ export default function WeeklyCalendarScreen({ navigation }) {
           <Text style={{ color: '#FCA5A5', marginBottom: 12 }}>{bookingsError}</Text>
         ) : null}
 
-        {dayCards.map((day) => {
+        {!visibleDayCards.length && !isBookingsLoading ? (
+          <View
+            style={{
+              backgroundColor: COLORS.card,
+              borderRadius: 18,
+              borderWidth: 1,
+              borderColor: '#2D2D38',
+              padding: 18,
+            }}
+          >
+            <Text style={{ color: COLORS.textPrimary, fontWeight: '700' }}>
+              No appointments this week.
+            </Text>
+            <Text style={{ color: COLORS.textSecondary, marginTop: 6 }}>
+              Turn on empty days to see the full week layout.
+            </Text>
+          </View>
+        ) : null}
+
+        {visibleDayCards.map((day) => {
           const appointmentCount = day.bookings.length;
           return (
             <View
@@ -301,6 +343,7 @@ export default function WeeklyCalendarScreen({ navigation }) {
                       key={booking.id}
                       booking={booking}
                       staffName={staffMember?.name || ''}
+                      navigation={navigation}
                     />
                   );
                 })

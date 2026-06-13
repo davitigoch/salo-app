@@ -47,6 +47,10 @@ export function matchesStatusFilter(booking, filterKey) {
     return true;
   }
 
+  if (filterKey === 'public_requests') {
+    return isPendingPublicRequest(booking);
+  }
+
   const status = booking?.status || 'confirmed';
 
   return status === filterKey;
@@ -54,6 +58,7 @@ export function matchesStatusFilter(booking, filterKey) {
 
 export const STATUS_FILTER_OPTIONS = [
   { key: 'all', label: 'All' },
+  { key: 'public_requests', label: 'Public Requests' },
   { key: 'pending', label: 'Pending' },
   { key: 'confirmed', label: 'Confirmed' },
   { key: 'completed', label: 'Completed' },

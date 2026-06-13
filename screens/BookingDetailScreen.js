@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Alert, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, Linking, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 
 import BackButton from '../components/BackButton';
 import PrimaryButton from '../components/PrimaryButton';
@@ -57,7 +57,9 @@ function getBookingSourceLabel(source) {
   return 'Owner booking';
 }
 
-function DetailRow({ label, value }) {
+function DetailRow({ label, value, onPress, linkLabel }) {
+  const displayValue = value || '—';
+
   return (
     <View style={{ marginBottom: 14 }}>
       <Text
@@ -70,9 +72,44 @@ function DetailRow({ label, value }) {
       >
         {label}
       </Text>
-      <Text style={{ color: COLORS.textPrimary, fontSize: 15, lineHeight: 22 }}>
-        {value || '—'}
+      {onPress && value ? (
+        <TouchableOpacity onPress={onPress} activeOpacity={0.85}>
+          <Text style={{ color: COLORS.accent, fontSize: 15, lineHeight: 22, fontWeight: '600' }}>
+            {linkLabel || displayValue}
+          </Text>
+        </TouchableOpacity>
+      ) : (
+        <Text style={{ color: COLORS.textPrimary, fontSize: 15, lineHeight: 22 }}>
+          {displayValue}
+        </Text>
+      )}
+    </View>
+  );
+}
+
+function DetailSection({ title, children, highlighted = false }) {
+  return (
+    <View
+      style={{
+        backgroundColor: highlighted ? '#221A10' : COLORS.card,
+        borderColor: highlighted ? '#6B4C1A' : '#2A2A33',
+        borderWidth: 1,
+        borderRadius: 18,
+        padding: 18,
+        marginBottom: 14,
+      }}
+    >
+      <Text
+        style={{
+          color: COLORS.textPrimary,
+          fontSize: 16,
+          fontWeight: '700',
+          marginBottom: 12,
+        }}
+      >
+        {title}
       </Text>
+      {children}
     </View>
   );
 }
@@ -180,6 +217,18 @@ export default function BookingDetailScreen({ navigation, route }) {
     ]);
   };
 
+  const openPhone = (phone) => {
+    Linking.openURL(`tel:${phone}`).catch(() => {
+      Alert.alert('Unable to open phone', 'This device could not start a phone call.');
+    });
+  };
+
+  const openEmail = (email) => {
+    Linking.openURL(`mailto:${email}`).catch(() => {
+      Alert.alert('Unable to open email', 'This device could not open your mail app.');
+    });
+  };
+
   if (!booking) {
     return (
       <ScreenContainer centered style={{ padding: 24 }}>
@@ -200,6 +249,8 @@ export default function BookingDetailScreen({ navigation, route }) {
   const showPublicRequestHighlight = isPendingPublicRequest(booking);
   const statusActions = getStatusActions(status);
   const isReadOnly = statusActions.length === 0;
+  const customerPhone = String(booking.customer_phone || '').trim();
+  const customerEmail = String(booking.customer_email || '').trim();
 
   return (
     <ScreenContainer style={{ paddingTop: 0 }}>
@@ -256,28 +307,33 @@ export default function BookingDetailScreen({ navigation, route }) {
           ) : null}
         </View>
 
-        <View
-          style={{
-            backgroundColor: showPublicRequestHighlight ? '#221A10' : COLORS.card,
-            borderColor: showPublicRequestHighlight ? '#6B4C1A' : '#2A2A33',
-            borderWidth: 1,
-            borderRadius: 18,
-            padding: 18,
-            marginBottom: 18,
-          }}
-        >
+        <DetailSection title="Customer" highlighted={showPublicRequestHighlight}>
           <DetailRow label="Client" value={booking.client_name} />
-          <DetailRow label="Phone" value={String(booking.customer_phone || '').trim()} />
-          <DetailRow label="Email" value={String(booking.customer_email || '').trim()} />
+          <DetailRow
+            label="Phone"
+            value={customerPhone}
+            onPress={customerPhone ? () => openPhone(customerPhone) : undefined}
+          />
+          <DetailRow
+            label="Email"
+            value={customerEmail}
+            onPress={customerEmail ? () => openEmail(customerEmail) : undefined}
+          />
+        </DetailSection>
+
+        <DetailSection title="Appointment">
           <DetailRow label="Service" value={booking.service} />
           <DetailRow label="Staff" value={staffName || 'Unassigned'} />
           <DetailRow label="Date" value={booking.date} />
           <DetailRow label="Time" value={formatTimeLabel(booking.time)} />
           <DetailRow label="Price" value={`$${Number(booking.price || 0).toFixed(2)}`} />
           <DetailRow label="Notes" value={booking.notes || 'No notes'} />
+        </DetailSection>
+
+        <DetailSection title="Booking Info">
           <DetailRow label="Created" value={formatCreatedAt(booking.created_at)} />
           <DetailRow label="Source" value={getBookingSourceLabel(booking.booking_source)} />
-        </View>
+        </DetailSection>
 
         {statusActions.length ? (
           <View style={{ marginBottom: 14 }}>

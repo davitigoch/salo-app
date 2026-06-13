@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import ScreenContainer from '../components/ScreenContainer';
-import { isPendingPublicRequest } from '../constants/bookingStatus';
+import { getStatusLabel, getStatusStyles, isPendingPublicRequest } from '../constants/bookingStatus';
 import { COLORS } from '../constants/colors';
 import { ROUTES } from '../constants/routes';
 import { useBookings } from '../context/BookingsContext';
@@ -177,6 +177,17 @@ export default function HomeScreen({ navigation }) {
   const nextBooking = upcomingBookings[0] || null;
   const pendingApprovalCount = bookings.filter(isPendingPublicRequest).length;
 
+  const todaysSchedule = bookings
+    .filter((booking) => booking.date === todayKey)
+    .sort((a, b) => {
+      const first = parseBookingDateTime(a);
+      const second = parseBookingDateTime(b);
+      if (!first || !second) {
+        return 0;
+      }
+      return first.getTime() - second.getTime();
+    });
+
   const recentActivity = [...bookings]
     .sort((a, b) => {
       const first = parseBookingDateTime(a);
@@ -265,13 +276,7 @@ export default function HomeScreen({ navigation }) {
         </Text>
 
         {pendingApprovalCount > 0 ? (
-          <TouchableOpacity
-            onPress={() =>
-              navigation.navigate(ROUTES.Bookings, {
-                statusFilter: 'pending',
-              })
-            }
-            activeOpacity={0.9}
+          <View
             style={{
               backgroundColor: '#2B2310',
               borderColor: '#6B4C1A',
@@ -283,105 +288,173 @@ export default function HomeScreen({ navigation }) {
             }}
           >
             <Text style={{ color: '#FDE68A', fontWeight: '700', fontSize: 14 }}>
-              {pendingApprovalCount} {pendingApprovalCount === 1 ? 'booking needs' : 'bookings need'} approval
+              {pendingApprovalCount} public {pendingApprovalCount === 1 ? 'request' : 'requests'} awaiting review
             </Text>
             <Text style={{ color: '#D6C089', marginTop: 4, fontSize: 12 }}>
-              Review public booking requests
+              Review booking requests from your public page
             </Text>
-          </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() =>
+                navigation.navigate(ROUTES.Bookings, {
+                  statusFilter: 'public_requests',
+                })
+              }
+              activeOpacity={0.9}
+              style={{
+                marginTop: 12,
+                alignSelf: 'flex-start',
+                backgroundColor: '#3A2A10',
+                borderColor: '#8B6914',
+                borderWidth: 1,
+                borderRadius: 10,
+                paddingHorizontal: 14,
+                paddingVertical: 9,
+              }}
+            >
+              <Text style={{ color: '#FCD34D', fontWeight: '700', fontSize: 13 }}>
+                Review Requests
+              </Text>
+            </TouchableOpacity>
+          </View>
         ) : null}
 
         <Text style={{ color: COLORS.textPrimary, fontSize: 17, fontWeight: '700', marginBottom: 12 }}>
           Today Overview
         </Text>
 
-        <View style={{ flexDirection: 'row', marginBottom: 24 }}>
-          <View
-            style={{
-              flex: 1,
-              backgroundColor: COLORS.card,
-              borderRadius: 16,
-              borderWidth: 1,
-              borderColor: '#3B325B',
-              paddingHorizontal: 12,
-              paddingVertical: 14,
-              minHeight: 116,
-              marginRight: 6,
-              shadowColor: '#000',
-              shadowOpacity: 0.22,
-              shadowRadius: 8,
-              shadowOffset: { width: 0, height: 6 },
-              elevation: 3,
-            }}
-          >
-            <Text style={{ color: '#8B8BA2', fontSize: 10, letterSpacing: 0.35 }}>REVENUE TODAY</Text>
-            <Text style={{ color: COLORS.textPrimary, fontSize: 24, fontWeight: '800', marginTop: 14 }}>
-              ${todayRevenue.toFixed(0)}
-            </Text>
-            <Text style={{ color: '#8B8BA2', fontSize: 11, marginTop: 10 }}>
-              Wk ${weeklyRevenue.toFixed(0)}
-            </Text>
+        <View style={{ marginBottom: 24 }}>
+          <View style={{ flexDirection: 'row', marginBottom: 10 }}>
+            <View
+              style={{
+                flex: 1,
+                backgroundColor: COLORS.card,
+                borderRadius: 16,
+                borderWidth: 1,
+                borderColor: '#3B325B',
+                paddingHorizontal: 12,
+                paddingVertical: 14,
+                minHeight: 116,
+                marginRight: 6,
+                shadowColor: '#000',
+                shadowOpacity: 0.22,
+                shadowRadius: 8,
+                shadowOffset: { width: 0, height: 6 },
+                elevation: 3,
+              }}
+            >
+              <Text style={{ color: '#8B8BA2', fontSize: 10, letterSpacing: 0.35 }}>REVENUE TODAY</Text>
+              <Text style={{ color: COLORS.textPrimary, fontSize: 24, fontWeight: '800', marginTop: 14 }}>
+                ${todayRevenue.toFixed(0)}
+              </Text>
+              <Text style={{ color: '#8B8BA2', fontSize: 11, marginTop: 10 }}>
+                Wk ${weeklyRevenue.toFixed(0)}
+              </Text>
+            </View>
+
+            <View
+              style={{
+                flex: 1,
+                backgroundColor: COLORS.card,
+                borderRadius: 16,
+                borderWidth: 1,
+                borderColor: '#324665',
+                paddingHorizontal: 12,
+                paddingVertical: 14,
+                minHeight: 116,
+                marginLeft: 6,
+                shadowColor: '#000',
+                shadowOpacity: 0.22,
+                shadowRadius: 8,
+                shadowOffset: { width: 0, height: 6 },
+                elevation: 3,
+              }}
+            >
+              <Text style={{ color: '#8B8BA2', fontSize: 10, letterSpacing: 0.35 }}>APPOINTMENTS TODAY</Text>
+              <Text style={{ color: COLORS.textPrimary, fontSize: 24, fontWeight: '800', marginTop: 14 }}>
+                {todaysAppointments}
+              </Text>
+              <Text style={{ color: '#8B8BA2', fontSize: 11, marginTop: 10 }}>
+                Today
+              </Text>
+            </View>
           </View>
 
-          <View
-            style={{
-              flex: 1,
-              backgroundColor: COLORS.card,
-              borderRadius: 16,
-              borderWidth: 1,
-              borderColor: '#324665',
-              paddingHorizontal: 12,
-              paddingVertical: 14,
-              minHeight: 116,
-              marginHorizontal: 3,
-              shadowColor: '#000',
-              shadowOpacity: 0.22,
-              shadowRadius: 8,
-              shadowOffset: { width: 0, height: 6 },
-              elevation: 3,
-            }}
-          >
-            <Text style={{ color: '#8B8BA2', fontSize: 10, letterSpacing: 0.35 }}>APPOINTMENTS TODAY</Text>
-            <Text style={{ color: COLORS.textPrimary, fontSize: 24, fontWeight: '800', marginTop: 14 }}>
-              {todaysAppointments}
-            </Text>
-            <Text style={{ color: '#8B8BA2', fontSize: 11, marginTop: 10 }}>
-              Today
-            </Text>
-          </View>
+          <View style={{ flexDirection: 'row' }}>
+            <View
+              style={{
+                flex: 1,
+                backgroundColor: COLORS.card,
+                borderRadius: 16,
+                borderWidth: 1,
+                borderColor: '#355248',
+                paddingHorizontal: 12,
+                paddingVertical: 14,
+                minHeight: 116,
+                marginRight: 6,
+                shadowColor: '#000',
+                shadowOpacity: 0.22,
+                shadowRadius: 8,
+                shadowOffset: { width: 0, height: 6 },
+                elevation: 3,
+              }}
+            >
+              <Text style={{ color: '#8B8BA2', fontSize: 10, letterSpacing: 0.35 }}>UPCOMING TODAY</Text>
+              <Text style={{ color: COLORS.textPrimary, fontSize: 24, fontWeight: '800', marginTop: 14 }}>
+                {upcomingToday}
+              </Text>
+              <Text style={{ color: '#8B8BA2', fontSize: 11, marginTop: 10 }}>
+                Queue
+              </Text>
+            </View>
 
-          <View
-            style={{
-              flex: 1,
-              backgroundColor: COLORS.card,
-              borderRadius: 16,
-              borderWidth: 1,
-              borderColor: '#355248',
-              paddingHorizontal: 12,
-              paddingVertical: 14,
-              minHeight: 116,
-              marginLeft: 6,
-              shadowColor: '#000',
-              shadowOpacity: 0.22,
-              shadowRadius: 8,
-              shadowOffset: { width: 0, height: 6 },
-              elevation: 3,
-            }}
-          >
-            <Text style={{ color: '#8B8BA2', fontSize: 10, letterSpacing: 0.35 }}>UPCOMING TODAY</Text>
-            <Text style={{ color: COLORS.textPrimary, fontSize: 24, fontWeight: '800', marginTop: 14 }}>
-              {upcomingToday}
-            </Text>
-            <Text style={{ color: '#8B8BA2', fontSize: 11, marginTop: 10 }}>
-              Queue
-            </Text>
+            <TouchableOpacity
+              onPress={() =>
+                navigation.navigate(ROUTES.Bookings, {
+                  statusFilter: 'public_requests',
+                })
+              }
+              activeOpacity={0.9}
+              style={{
+                flex: 1,
+                backgroundColor: COLORS.card,
+                borderRadius: 16,
+                borderWidth: 1,
+                borderColor: pendingApprovalCount > 0 ? '#6B4C1A' : '#3D3D4A',
+                paddingHorizontal: 12,
+                paddingVertical: 14,
+                minHeight: 116,
+                marginLeft: 6,
+                shadowColor: '#000',
+                shadowOpacity: 0.22,
+                shadowRadius: 8,
+                shadowOffset: { width: 0, height: 6 },
+                elevation: 3,
+              }}
+            >
+              <Text style={{ color: '#8B8BA2', fontSize: 10, letterSpacing: 0.35 }}>PENDING REQUESTS</Text>
+              <Text style={{ color: COLORS.textPrimary, fontSize: 24, fontWeight: '800', marginTop: 14 }}>
+                {pendingApprovalCount}
+              </Text>
+              <Text style={{ color: '#8B8BA2', fontSize: 11, marginTop: 10 }}>
+                Public requests
+              </Text>
+            </TouchableOpacity>
           </View>
         </View>
 
         <Text style={{ color: COLORS.textPrimary, fontSize: 17, fontWeight: '700', marginBottom: 12 }}>
           Next Appointment
         </Text>
-        <View
+        <TouchableOpacity
+          onPress={() => {
+            if (nextBooking) {
+              navigation.navigate(ROUTES.BookingDetail, {
+                bookingId: nextBooking.id,
+              });
+            }
+          }}
+          activeOpacity={nextBooking ? 0.9 : 1}
+          disabled={!nextBooking}
           style={{
             backgroundColor: '#141420',
             borderWidth: 1,
@@ -462,6 +535,71 @@ export default function HomeScreen({ navigation }) {
               Syncing latest dashboard stats...
             </Text>
           ) : null}
+        </TouchableOpacity>
+
+        <Text style={{ color: COLORS.textPrimary, fontSize: 17, fontWeight: '700', marginBottom: 12 }}>
+          Today's Schedule
+        </Text>
+        <View
+          style={{
+            backgroundColor: COLORS.card,
+            borderWidth: 1,
+            borderColor: '#2A2A38',
+            borderRadius: 18,
+            paddingHorizontal: 14,
+            paddingVertical: 10,
+            marginBottom: 24,
+          }}
+        >
+          {todaysSchedule.length ? (
+            todaysSchedule.map((booking, index) => {
+              const statusStyles = getStatusStyles(booking.status || 'confirmed');
+
+              return (
+                <TouchableOpacity
+                  key={booking.id}
+                  onPress={() =>
+                    navigation.navigate(ROUTES.BookingDetail, {
+                      bookingId: booking.id,
+                    })
+                  }
+                  activeOpacity={0.9}
+                  style={{
+                    paddingVertical: 14,
+                    borderBottomWidth: index === todaysSchedule.length - 1 ? 0 : 1,
+                    borderBottomColor: '#303042',
+                  }}
+                >
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Text style={{ color: COLORS.textPrimary, fontWeight: '700', fontSize: 15 }}>
+                      {formatTimeLabel(booking.time)} • {booking.client_name}
+                    </Text>
+                    <View
+                      style={{
+                        backgroundColor: statusStyles.background,
+                        borderColor: statusStyles.border,
+                        borderWidth: 1,
+                        borderRadius: 999,
+                        paddingHorizontal: 8,
+                        paddingVertical: 3,
+                      }}
+                    >
+                      <Text style={{ color: statusStyles.text, fontSize: 10, fontWeight: '700' }}>
+                        {getStatusLabel(booking.status).toUpperCase()}
+                      </Text>
+                    </View>
+                  </View>
+                  <Text style={{ color: COLORS.textSecondary, marginTop: 6, fontSize: 13 }}>
+                    {booking.service}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })
+          ) : (
+            <Text style={{ color: COLORS.textSecondary, paddingVertical: 12 }}>
+              No appointments scheduled for today.
+            </Text>
+          )}
         </View>
 
         <Text style={{ color: COLORS.textPrimary, fontSize: 17, fontWeight: '700', marginBottom: 12 }}>

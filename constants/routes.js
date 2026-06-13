@@ -9,6 +9,7 @@ export const ROUTES = {
   AddBooking: 'AddBooking',
   BookingDetail: 'BookingDetail',
   AddClient: 'AddClient',
+  ClientDetail: 'ClientDetail',
   Services: 'Services',
   AddService: 'AddService',
   Staff: 'Staff',

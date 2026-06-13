@@ -141,6 +141,7 @@ export default function AddBookingScreen({ navigation, route }) {
   } = useServices();
   const { staff, staffAvailability } = useStaff();
   const bookingId = route?.params?.bookingId;
+  const prefilledClientName = route?.params?.clientName;
   const bookingToEdit = useMemo(
     () => bookings.find((booking) => booking.id === bookingId),
     [bookings, bookingId]
@@ -269,6 +270,14 @@ export default function AddBookingScreen({ navigation, route }) {
     setSelectedSlotTime(bookingToEdit.time || '');
     setNotes(bookingToEdit.notes || '');
   }, [activeServices, bookingToEdit]);
+
+  useEffect(() => {
+    if (bookingToEdit || !prefilledClientName) {
+      return;
+    }
+
+    setClientName(prefilledClientName);
+  }, [bookingToEdit, prefilledClientName]);
 
   useEffect(() => {
     if (!slotsResult.slots.length) {
