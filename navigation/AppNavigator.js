@@ -459,6 +459,30 @@ export default function AppNavigator() {
     return { error: null };
   };
 
+  const updatePublicBookingEnabled = async (enabled) => {
+    if (!business?.id || !session?.user?.id) {
+      return { error: { message: 'Business is not ready yet.' } };
+    }
+
+    setBusinessError('');
+
+    const { data, error } = await supabase
+      .from('businesses')
+      .update({ public_booking_enabled: Boolean(enabled) })
+      .eq('id', business.id)
+      .eq('owner_user_id', session.user.id)
+      .select(BUSINESS_SELECT_COLUMNS)
+      .single();
+
+    if (error) {
+      setBusinessError(error.message);
+      return { error };
+    }
+
+    setBusiness(normalizeOnboardingStatus(data));
+    return { error: null };
+  };
+
   const saveBusinessProfile = async (profileInput) => {
     if (!business?.id || !session?.user?.id) {
       return { error: { message: 'Business is not ready yet.' } };
@@ -1186,6 +1210,7 @@ export default function AppNavigator() {
       saveBusinessHours,
       saveBusinessPaymentSettings,
       saveBusinessProfile,
+      updatePublicBookingEnabled,
       completeOnboarding,
       signIn,
       signUp,
@@ -1204,6 +1229,7 @@ export default function AppNavigator() {
       saveBusinessHours,
       saveBusinessPaymentSettings,
       saveBusinessProfile,
+      updatePublicBookingEnabled,
       completeOnboarding,
     ]
   );

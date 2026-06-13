@@ -1,5 +1,5 @@
-import React from 'react';
-import { Alert, ScrollView, View, Text, TouchableOpacity } from 'react-native';
+import React, { useState } from 'react';
+import { Alert, ScrollView, Switch, View, Text, TouchableOpacity } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -35,7 +35,16 @@ const SETTINGS = [
 
 export default function SettingsScreen({ navigation }) {
   const insets = useSafeAreaInsets();
-  const { signOut, business, isBusinessLoading, businessError } = useAuth();
+  const {
+    signOut,
+    business,
+    isBusinessLoading,
+    businessError,
+    updatePublicBookingEnabled,
+  } = useAuth();
+  const [isUpdatingPublicBooking, setIsUpdatingPublicBooking] = useState(false);
+
+  const isPublicBookingEnabled = business?.public_booking_enabled !== false;
 
   const onSignOut = async () => {
     const { error } = await signOut();
@@ -54,6 +63,16 @@ export default function SettingsScreen({ navigation }) {
 
     await Clipboard.setStringAsync(publicBookingLink);
     Alert.alert('Copied', 'Public booking link copied to clipboard.');
+  };
+
+  const onTogglePublicBooking = async (enabled) => {
+    setIsUpdatingPublicBooking(true);
+    const { error } = await updatePublicBookingEnabled(enabled);
+    setIsUpdatingPublicBooking(false);
+
+    if (error) {
+      Alert.alert('Update failed', error.message);
+    }
   };
 
   return (
@@ -210,6 +229,44 @@ export default function SettingsScreen({ navigation }) {
                   >
                     {publicBookingLink || 'No public link generated yet.'}
                   </Text>
+
+                  {!isPublicBookingEnabled ? (
+                    <Text
+                      style={{
+                        color: '#FCA5A5',
+                        marginTop: 8,
+                        fontSize: 13,
+                        lineHeight: 18,
+                      }}
+                    >
+                      Public booking is currently disabled.
+                    </Text>
+                  ) : null}
+
+                  <View
+                    style={{
+                      backgroundColor: '#14141B',
+                      borderRadius: 12,
+                      borderWidth: 1,
+                      borderColor: '#2A2A34',
+                      padding: 12,
+                      marginTop: 12,
+                      flexDirection: 'row',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                    }}
+                  >
+                    <Text style={{ color: COLORS.textPrimary, fontWeight: '600', flex: 1, paddingRight: 8 }}>
+                      Public online booking
+                    </Text>
+                    <Switch
+                      value={isPublicBookingEnabled}
+                      onValueChange={onTogglePublicBooking}
+                      disabled={isUpdatingPublicBooking}
+                      trackColor={{ false: '#353543', true: '#5B21B6' }}
+                      thumbColor={isPublicBookingEnabled ? '#A78BFA' : '#9CA3AF'}
+                    />
+                  </View>
 
                   <PrimaryButton
                     title="Copy Link"

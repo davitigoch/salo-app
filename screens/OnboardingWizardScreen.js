@@ -94,6 +94,7 @@ export default function OnboardingWizardScreen({ navigation }) {
     saveBusinessHours,
     saveBusinessPaymentSettings,
     saveBusinessProfile,
+    updatePublicBookingEnabled,
     completeOnboarding,
   } = useAuth();
   const { services, addService } = useServices();
@@ -119,6 +120,7 @@ export default function OnboardingWizardScreen({ navigation }) {
   const [depositsEnabled, setDepositsEnabled] = useState(false);
   const [depositPercentage, setDepositPercentage] = useState('30');
   const [requireCardOnBooking, setRequireCardOnBooking] = useState(false);
+  const [publicBookingEnabled, setPublicBookingEnabled] = useState(true);
 
   useEffect(() => {
     if (!business) {
@@ -131,6 +133,7 @@ export default function OnboardingWizardScreen({ navigation }) {
     setDepositsEnabled(Boolean(business.deposits_enabled));
     setDepositPercentage(String(Number(business.deposit_percentage ?? 30)));
     setRequireCardOnBooking(Boolean(business.require_card_on_booking));
+    setPublicBookingEnabled(business.public_booking_enabled !== false);
   }, [business]);
 
   useEffect(() => {
@@ -351,6 +354,14 @@ export default function OnboardingWizardScreen({ navigation }) {
 
     if (step === 5) {
       setIsSaving(true);
+      const { error: publicBookingError } = await updatePublicBookingEnabled(publicBookingEnabled);
+
+      if (publicBookingError) {
+        setIsSaving(false);
+        Alert.alert('Could not save public booking setting', publicBookingError.message);
+        return;
+      }
+
       const { error } = await completeOnboarding();
       setIsSaving(false);
 
@@ -640,6 +651,43 @@ export default function OnboardingWizardScreen({ navigation }) {
                   <Text style={{ color: '#DDD6FE', marginTop: 6, fontSize: 14, fontWeight: '600' }}>
                     {bookingUrl}
                   </Text>
+                </View>
+
+                {!publicBookingEnabled ? (
+                  <Text
+                    style={{
+                      color: '#FCA5A5',
+                      marginTop: 12,
+                      fontSize: 13,
+                      lineHeight: 18,
+                    }}
+                  >
+                    Public booking is currently disabled.
+                  </Text>
+                ) : null}
+
+                <View
+                  style={{
+                    backgroundColor: '#14141B',
+                    borderRadius: 12,
+                    borderWidth: 1,
+                    borderColor: '#2A2A34',
+                    padding: 12,
+                    marginTop: 12,
+                    flexDirection: 'row',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                  }}
+                >
+                  <Text style={{ color: COLORS.textPrimary, fontWeight: '600', flex: 1, paddingRight: 8 }}>
+                    Public online booking
+                  </Text>
+                  <Switch
+                    value={publicBookingEnabled}
+                    onValueChange={setPublicBookingEnabled}
+                    trackColor={{ false: '#353543', true: '#5B21B6' }}
+                    thumbColor={publicBookingEnabled ? '#A78BFA' : '#9CA3AF'}
+                  />
                 </View>
 
                 <Text style={{ color: COLORS.textSecondary, marginTop: 12, lineHeight: 20 }}>
