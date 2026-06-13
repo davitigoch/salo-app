@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import ScreenContainer from '../components/ScreenContainer';
+import { isPendingPublicRequest } from '../constants/bookingStatus';
 import { COLORS } from '../constants/colors';
 import { ROUTES } from '../constants/routes';
 import { useBookings } from '../context/BookingsContext';
@@ -174,6 +175,7 @@ export default function HomeScreen({ navigation }) {
 
   const upcomingCount = upcomingBookings.length;
   const nextBooking = upcomingBookings[0] || null;
+  const pendingApprovalCount = bookings.filter(isPendingPublicRequest).length;
 
   const recentActivity = [...bookings]
     .sort((a, b) => {
@@ -261,6 +263,33 @@ export default function HomeScreen({ navigation }) {
         >
           {clients.length} clients in your roster • {bookings.length} total appointments
         </Text>
+
+        {pendingApprovalCount > 0 ? (
+          <TouchableOpacity
+            onPress={() =>
+              navigation.navigate(ROUTES.Bookings, {
+                statusFilter: 'pending',
+              })
+            }
+            activeOpacity={0.9}
+            style={{
+              backgroundColor: '#2B2310',
+              borderColor: '#6B4C1A',
+              borderWidth: 1,
+              borderRadius: 14,
+              paddingHorizontal: 14,
+              paddingVertical: 12,
+              marginBottom: 20,
+            }}
+          >
+            <Text style={{ color: '#FDE68A', fontWeight: '700', fontSize: 14 }}>
+              {pendingApprovalCount} {pendingApprovalCount === 1 ? 'booking needs' : 'bookings need'} approval
+            </Text>
+            <Text style={{ color: '#D6C089', marginTop: 4, fontSize: 12 }}>
+              Review public booking requests
+            </Text>
+          </TouchableOpacity>
+        ) : null}
 
         <Text style={{ color: COLORS.textPrimary, fontSize: 17, fontWeight: '700', marginBottom: 12 }}>
           Today Overview

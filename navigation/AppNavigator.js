@@ -103,6 +103,8 @@ function isIgnorableRootLinkingUrl(url) {
 }
 
 const Stack = createNativeStackNavigator();
+const BOOKING_SELECT_COLUMNS =
+  'id, client_name, service, date, time, status, price, notes, staff_member_id, booking_metadata, user_id, created_at, customer_email, customer_phone, booking_source, booking_token';
 const BUSINESS_SELECT_COLUMNS = 'id, owner_user_id, business_name, slug, description, timezone, services, public_booking_enabled, onboarding_completed, deposits_enabled, deposit_percentage, require_card_on_booking, stripe_account_id, stripe_charges_enabled, stripe_payouts_enabled, created_at';
 const BUSINESS_BOOTSTRAP_TIMEOUT_MS = 15000;
 
@@ -323,7 +325,7 @@ export default function AppNavigator() {
 
     const { data, error } = await supabase
       .from('bookings')
-      .select('id, client_name, service, date, time, status, price, notes, staff_member_id, booking_metadata, user_id, created_at')
+      .select(BOOKING_SELECT_COLUMNS)
       .eq('user_id', session.user.id)
       .order('date', { ascending: true })
       .order('time', { ascending: true });
@@ -959,7 +961,7 @@ export default function AppNavigator() {
     const { data, error } = await supabase
       .from('bookings')
       .insert(payload)
-      .select('id, client_name, service, date, time, status, price, notes, staff_member_id, booking_metadata, user_id, created_at')
+      .select(BOOKING_SELECT_COLUMNS)
       .single();
 
     if (error) {
@@ -983,7 +985,7 @@ export default function AppNavigator() {
       .update(bookingInput)
       .eq('id', bookingId)
       .eq('user_id', session.user.id)
-      .select('id, client_name, service, date, time, status, price, notes, staff_member_id, booking_metadata, user_id, created_at')
+      .select(BOOKING_SELECT_COLUMNS)
       .single();
 
     if (error) {
