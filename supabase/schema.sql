@@ -745,6 +745,11 @@ on public.clients
 for delete
 using (auth.uid() = user_id);
 
+alter table public.bookings
+add column if not exists client_id uuid references public.clients(id) on delete set null;
+
+create index if not exists bookings_client_id_idx on public.bookings (client_id);
+
 create table if not exists public.notification_preferences (
   id uuid primary key default gen_random_uuid(),
   business_id uuid not null unique references public.businesses(id) on delete cascade,

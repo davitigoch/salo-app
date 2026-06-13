@@ -1,7 +1,11 @@
 import { parseBookingDateTime } from './bookings';
+import { formatTimeDisplay } from '../constants/availability';
+import { getStatusLabel, getStatusStyles } from '../constants/bookingStatus';
 
 const VISIT_STATUSES = new Set(['pending', 'confirmed', 'completed']);
 const REVENUE_STATUSES = new Set(['confirmed', 'completed']);
+const COMPLETED_STATUSES = new Set(['completed']);
+const ACTIVE_FUTURE_STATUSES = new Set(['pending', 'confirmed', 'completed']);
 
 function normalizeClientName(value) {
   return String(value || '').trim().toLowerCase();
@@ -40,6 +44,14 @@ export function formatShortBookingDate(booking) {
   });
 }
 
+export function formatBookingTime(booking) {
+  return formatTimeDisplay(booking?.time);
+}
+
+export function formatBookingPrice(booking) {
+  return `$${Number(booking?.price || 0).toFixed(0)}`;
+}
+
 export function getClientInitials(clientName) {
   const parts = String(clientName || '').trim().split(/\s+/).filter(Boolean);
 
@@ -54,26 +66,6 @@ export function getClientInitials(clientName) {
   return '?';
 }
 
-function getTimelineEventLabel(booking, now = new Date()) {
-  const status = booking.status || 'confirmed';
-  const appointmentDate = parseBookingDateTime(booking);
-  const isFuture = appointmentDate && appointmentDate.getTime() >= now.getTime();
-
-  switch (status) {
-    case 'completed':
-      return 'Appointment completed';
-    case 'cancelled':
-      return 'Appointment cancelled';
-    case 'no_show':
-      return 'No-show recorded';
-    case 'pending':
-      return 'Appointment requested';
-    case 'confirmed':
-      return isFuture ? 'Appointment booked' : 'Appointment completed';
-    default:
-      return isFuture ? 'Appointment booked' : 'Appointment completed';
-  }
-}
 
 function formatTimelineDate(booking) {
   const appointmentDate = parseBookingDateTime(booking);
@@ -96,28 +88,103 @@ export function getClientTimelineEvents(client, bookings, now = new Date()) {
       const appointmentDate = parseBookingDateTime(booking);
       const fallbackDate = booking.created_at ? new Date(booking.created_at) : null;
       const sortDate = appointmentDate || fallbackDate;
+      const status = booking.status || 'confirmed';
+      const statusStyles = getStatusStyles(status);
 
       return {
         id: booking.id,
         booking,
         dateLabel: formatTimelineDate(booking),
-        label: getTimelineEventLabel(booking, now),
+        timeLabel: formatBookingTime(booking),
+        priceLabel: formatBookingPrice(booking),
+        serviceLabel: booking.service || 'Appointment',
+        status,
+        statusLabel: getStatusLabel(status).toUpperCase(),
+        statusStyles,
         sortTime: sortDate ? sortDate.getTime() : 0,
       };
     })
     .sort((first, second) => second.sortTime - first.sortTime);
 }
 
-export function getClientBookingsForClient(client, bookings) {
-  const clientName = normalizeClientName(client?.client_name);
+export function findClientForBooking(booking, clients) {
+  if (!booking || !clients?.length) {
+    return null;
+  }
 
-  if (!clientName) {
+  if (booking.client_id) {
+    return clients.find((client) => client.id === booking.client_id) || null;
+  }
+
+  const email = normalizeEmail(booking.customer_email);
+  if (email) {
+    const byEmail = clients.find((client) => normalizeEmail(client.email) === email);
+    if (byEmail) {
+      return byEmail;
+    }
+  }
+
+  const phone = normalizePhone(booking.customer_phone);
+  if (phone) {
+    const byPhone = clients.find((client) => normalizePhone(client.phone) === phone);
+    if (byPhone) {
+      return byPhone;
+    }
+  }
+
+  const bookingName = normalizeClientName(booking.client_name);
+  if (!bookingName) {
+    return null;
+  }
+
+  return clients.find((client) => normalizeClientName(client.client_name) === bookingName) || null;
+}
+
+export function bookingMatchesClient(client, booking) {
+  if (!client || !booking) {
+    return false;
+  }
+
+  if (client.id && booking.client_id) {
+    return booking.client_id === client.id;
+  }
+
+  if (booking.client_id && client.id && booking.client_id !== client.id) {
+    return false;
+  }
+
+  const clientEmail = normalizeEmail(client.email);
+  const bookingEmail = normalizeEmail(booking.customer_email);
+  if (clientEmail && bookingEmail && clientEmail === bookingEmail) {
+    return true;
+  }
+
+  const clientPhone = normalizePhone(client.phone);
+  const bookingPhone = normalizePhone(booking.customer_phone);
+  if (clientPhone && bookingPhone && clientPhone === bookingPhone) {
+    return true;
+  }
+
+  const clientName = normalizeClientName(client.client_name);
+  const bookingName = normalizeClientName(booking.client_name);
+
+  return Boolean(clientName && bookingName && clientName === bookingName);
+}
+
+function isActiveFutureStatus(status) {
+  return ACTIVE_FUTURE_STATUSES.has(status || 'confirmed');
+}
+
+export function getUnlinkedBookings(bookings) {
+  return (bookings || []).filter((booking) => !booking.client_id);
+}
+
+export function getClientBookingsForClient(client, bookings) {
+  if (!client) {
     return [];
   }
 
-  return (bookings || []).filter(
-    (booking) => normalizeClientName(booking.client_name) === clientName
-  );
+  return (bookings || []).filter((booking) => bookingMatchesClient(client, booking));
 }
 
 export function getClientCrmStats(client, bookings, now = new Date()) {
@@ -128,9 +195,19 @@ export function getClientCrmStats(client, bookings, now = new Date()) {
     VISIT_STATUSES.has(booking.status || 'confirmed')
   );
 
+  const completedVisits = clientBookings.filter((booking) =>
+    COMPLETED_STATUSES.has(booking.status || 'confirmed')
+  ).length;
+
+  const noShows = clientBookings.filter(
+    (booking) => (booking.status || 'confirmed') === 'no_show'
+  ).length;
+
   const lifetimeRevenue = clientBookings
     .filter((booking) => REVENUE_STATUSES.has(booking.status || 'confirmed'))
     .reduce((sum, booking) => sum + Number(booking.price || 0), 0);
+
+  const averageTicket = completedVisits > 0 ? lifetimeRevenue / completedVisits : 0;
 
   const datedBookings = clientBookings
     .map((booking) => ({
@@ -140,7 +217,12 @@ export function getClientCrmStats(client, bookings, now = new Date()) {
     .filter((entry) => entry.appointmentDate);
 
   const pastBookings = datedBookings
-    .filter((entry) => entry.appointmentDate.getTime() < nowMs)
+    .filter(
+      (entry) =>
+        entry.appointmentDate.getTime() < nowMs
+        && (entry.booking.status || 'confirmed') !== 'cancelled'
+        && (entry.booking.status || 'confirmed') !== 'no_show'
+    )
     .sort((first, second) => second.appointmentDate.getTime() - first.appointmentDate.getTime())
     .map((entry) => entry.booking);
 
@@ -148,8 +230,7 @@ export function getClientCrmStats(client, bookings, now = new Date()) {
     .filter(
       (entry) =>
         entry.appointmentDate.getTime() >= nowMs
-        && (entry.booking.status || 'confirmed') !== 'cancelled'
-        && (entry.booking.status || 'confirmed') !== 'no_show'
+        && isActiveFutureStatus(entry.booking.status)
     )
     .sort((first, second) => first.appointmentDate.getTime() - second.appointmentDate.getTime())
     .map((entry) => entry.booking);
@@ -159,11 +240,14 @@ export function getClientCrmStats(client, bookings, now = new Date()) {
 
   return {
     totalVisits: visitBookings.length,
+    completedVisits,
     lifetimeRevenue,
+    averageTicket,
+    noShows,
     lastVisit,
-    lastVisitLabel: lastVisit ? formatBookingLabel(lastVisit) : 'No visits yet',
+    lastVisitLabel: lastVisit ? formatShortBookingDate(lastVisit) : 'No visits yet',
     nextAppointment,
-    nextAppointmentLabel: nextAppointment ? formatBookingLabel(nextAppointment) : 'None scheduled',
+    nextAppointmentLabel: nextAppointment ? formatShortBookingDate(nextAppointment) : 'No upcoming appointments.',
     upcomingAppointments,
     appointmentHistory: pastBookings,
   };
@@ -218,18 +302,18 @@ export async function syncClientFromConfirmedPublicBooking({
   const bookingNotes = String(booking?.notes || '').trim();
 
   if (!clientName && !email && !phone) {
-    return { error: null };
+    return { error: null, clientId: booking?.client_id || null };
   }
 
-  let existingClient = null;
+  if (booking?.client_id) {
+    const linkedClient = clients.find((client) => client.id === booking.client_id) || null;
 
-  if (email) {
-    existingClient = clients.find((client) => normalizeEmail(client.email) === email) || null;
+    if (linkedClient) {
+      return { error: null, clientId: linkedClient.id };
+    }
   }
 
-  if (!existingClient && phone) {
-    existingClient = clients.find((client) => normalizePhone(client.phone) === phone) || null;
-  }
+  let existingClient = findClientForBooking(booking, clients);
 
   if (existingClient) {
     const updates = {};
@@ -250,17 +334,27 @@ export async function syncClientFromConfirmedPublicBooking({
       updates.notes = bookingNotes;
     }
 
-    if (!Object.keys(updates).length) {
-      return { error: null };
+    if (Object.keys(updates).length) {
+      const { error } = await updateClient(existingClient.id, updates);
+
+      if (error) {
+        return { error, clientId: null };
+      }
     }
 
-    return updateClient(existingClient.id, updates);
+    return { error: null, clientId: existingClient.id };
   }
 
-  return addClient({
+  const { error, data } = await addClient({
     client_name: clientName || 'Guest',
     phone: String(booking.customer_phone || '').trim(),
     email: String(booking.customer_email || '').trim(),
     notes: bookingNotes,
   });
+
+  if (error) {
+    return { error, clientId: null };
+  }
+
+  return { error: null, clientId: data?.id || null };
 }

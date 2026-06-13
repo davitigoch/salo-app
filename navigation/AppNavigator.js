@@ -18,6 +18,8 @@ import {
   syncBookingReminders,
 } from '../notifications/bookingReminders';
 import {
+  findClientForBooking,
+  getUnlinkedBookings,
   syncClientFromConfirmedPublicBooking,
 } from '../utils/clients';
 import { AuthProvider } from '../context/AuthContext';
@@ -109,7 +111,7 @@ function isIgnorableRootLinkingUrl(url) {
 
 const Stack = createNativeStackNavigator();
 const BOOKING_SELECT_COLUMNS =
-  'id, client_name, service, date, time, status, price, notes, staff_member_id, booking_metadata, user_id, created_at, customer_email, customer_phone, booking_source, booking_token';
+  'id, client_id, client_name, service, date, time, status, price, notes, staff_member_id, booking_metadata, user_id, created_at, customer_email, customer_phone, booking_source, booking_token';
 const BUSINESS_SELECT_COLUMNS = 'id, owner_user_id, business_name, slug, description, timezone, services, public_booking_enabled, onboarding_completed, deposits_enabled, deposit_percentage, require_card_on_booking, stripe_account_id, stripe_charges_enabled, stripe_payouts_enabled, created_at';
 const BUSINESS_BOOTSTRAP_TIMEOUT_MS = 15000;
 
@@ -171,6 +173,7 @@ export default function AppNavigator() {
   const [businessBootstrapError, setBusinessBootstrapError] = useState('');
   const [isPasswordRecoveryPending, setIsPasswordRecoveryPending] = useState(false);
   const [passwordRecoveryLinkError, setPasswordRecoveryLinkError] = useState('');
+  const bookingLinkBackfillRef = useRef(new Set());
 
   const handlePasswordResetUrl = useCallback(async (url) => {
     if (!isPasswordResetUrl(url)) {
@@ -951,6 +954,67 @@ export default function AppNavigator() {
     };
   }, [fetchClients, session?.user?.id]);
 
+  useEffect(() => {
+    if (!session?.user?.id || isBookingsLoading || isClientsLoading) {
+      return undefined;
+    }
+
+    const unlinkedBookings = getUnlinkedBookings(bookings);
+    if (!unlinkedBookings.length || !clients.length) {
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    (async () => {
+      for (const booking of unlinkedBookings) {
+        if (cancelled) {
+          return;
+        }
+
+        if (bookingLinkBackfillRef.current.has(booking.id)) {
+          continue;
+        }
+
+        const matchedClient = findClientForBooking(booking, clients);
+        if (!matchedClient) {
+          bookingLinkBackfillRef.current.add(booking.id);
+          continue;
+        }
+
+        bookingLinkBackfillRef.current.add(booking.id);
+
+        const { data: linkedBooking, error } = await supabase
+          .from('bookings')
+          .update({ client_id: matchedClient.id })
+          .eq('id', booking.id)
+          .eq('user_id', session.user.id)
+          .select(BOOKING_SELECT_COLUMNS)
+          .single();
+
+        if (cancelled || error || !linkedBooking) {
+          continue;
+        }
+
+        setBookings((previousBookings) =>
+          previousBookings.map((item) =>
+            item.id === booking.id ? linkedBooking : item
+          )
+        );
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    bookings,
+    clients,
+    isBookingsLoading,
+    isClientsLoading,
+    session?.user?.id,
+  ]);
+
   const addBooking = async (bookingInput) => {
     if (!session?.user?.id) {
       return { error: { message: 'User is not authenticated.' } };
@@ -1011,12 +1075,32 @@ export default function AppNavigator() {
       && previousBooking?.status === 'pending'
       && data?.booking_source === 'public'
     ) {
-      await syncClientFromConfirmedPublicBooking({
+      const syncResult = await syncClientFromConfirmedPublicBooking({
         booking: data,
         clients,
         addClient,
         updateClient,
       });
+
+      if (!syncResult.error && syncResult.clientId && data.client_id !== syncResult.clientId) {
+        const { data: linkedBooking, error: linkError } = await supabase
+          .from('bookings')
+          .update({ client_id: syncResult.clientId })
+          .eq('id', bookingId)
+          .eq('user_id', session.user.id)
+          .select(BOOKING_SELECT_COLUMNS)
+          .single();
+
+        if (!linkError && linkedBooking) {
+          setBookings((previousBookings) =>
+            previousBookings.map((booking) =>
+              booking.id === bookingId ? linkedBooking : booking
+            )
+          );
+
+          return { error: null, data: linkedBooking };
+        }
+      }
     }
 
     return { error: null, data };
@@ -1097,7 +1181,7 @@ export default function AppNavigator() {
     }
 
     setClients((previousClients) => [data, ...previousClients]);
-    return { error: null };
+    return { error: null, data };
   };
 
   const updateClient = async (clientId, clientInput) => {
@@ -1126,7 +1210,7 @@ export default function AppNavigator() {
       )
     );
 
-    return { error: null };
+    return { error: null, data };
   };
 
   const deleteClient = async (clientId) => {

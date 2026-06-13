@@ -142,6 +142,7 @@ export default function AddBookingScreen({ navigation, route }) {
   const { staff, staffAvailability } = useStaff();
   const bookingId = route?.params?.bookingId;
   const prefilledClientName = route?.params?.clientName;
+  const prefilledClientId = route?.params?.clientId;
   const bookingToEdit = useMemo(
     () => bookings.find((booking) => booking.id === bookingId),
     [bookings, bookingId]
@@ -364,6 +365,7 @@ export default function AddBookingScreen({ navigation, route }) {
 
     const payload = {
       client_name: clientName.trim(),
+      client_id: prefilledClientId || bookingToEdit?.client_id || null,
       service: selectedService.name,
       date: normalizedDate,
       time: normalizedTime,
