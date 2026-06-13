@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Alert, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 import PrimaryButton from '../components/PrimaryButton';
+import PasswordInput from '../components/PasswordInput';
 import ScreenContainer from '../components/ScreenContainer';
 import { COLORS } from '../constants/colors';
 import { ROUTES } from '../constants/routes';
@@ -111,29 +112,12 @@ export default function LoginScreen({ navigation }) {
         />
       </View>
 
-      <View
-        style={{
-          backgroundColor: COLORS.card,
-          borderColor: '#27272A',
-          borderWidth: 1,
-          borderRadius: 14,
-          paddingHorizontal: 14,
-          marginBottom: 16,
-        }}
-      >
-        <TextInput
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry
-          placeholder="Password"
-          placeholderTextColor={COLORS.textSecondary}
-          style={{
-            color: COLORS.textPrimary,
-            height: 52,
-            fontSize: 15,
-          }}
-        />
-      </View>
+      <PasswordInput
+        value={password}
+        onChangeText={setPassword}
+        placeholder="Password"
+        style={{ marginBottom: 16 }}
+      />
 
       <PrimaryButton
         title={

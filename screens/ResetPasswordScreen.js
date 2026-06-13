@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { Alert, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert, Text, TouchableOpacity, View } from 'react-native';
 
 import PrimaryButton from '../components/PrimaryButton';
+import PasswordInput from '../components/PasswordInput';
 import ScreenContainer from '../components/ScreenContainer';
 import { COLORS } from '../constants/colors';
 import { ROUTES } from '../constants/routes';
@@ -147,57 +148,27 @@ export default function ResetPasswordScreen({ navigation }) {
 
       {!linkIsInvalid ? (
         <>
-          <View
+          <PasswordInput
+            value={password}
+            onChangeText={setPassword}
+            editable={!isSuccess}
+            placeholder="New password"
             style={{
-              backgroundColor: COLORS.card,
-              borderColor: '#27272A',
-              borderWidth: 1,
-              borderRadius: 14,
-              paddingHorizontal: 14,
               marginBottom: 12,
               opacity: isSuccess ? 0.55 : 1,
             }}
-          >
-            <TextInput
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry
-              editable={!isSuccess}
-              placeholder="New password"
-              placeholderTextColor={COLORS.textSecondary}
-              style={{
-                color: COLORS.textPrimary,
-                height: 52,
-                fontSize: 15,
-              }}
-            />
-          </View>
+          />
 
-          <View
+          <PasswordInput
+            value={confirmPassword}
+            onChangeText={setConfirmPassword}
+            editable={!isSuccess}
+            placeholder="Confirm new password"
             style={{
-              backgroundColor: COLORS.card,
-              borderColor: '#27272A',
-              borderWidth: 1,
-              borderRadius: 14,
-              paddingHorizontal: 14,
               marginBottom: 16,
               opacity: isSuccess ? 0.55 : 1,
             }}
-          >
-            <TextInput
-              value={confirmPassword}
-              onChangeText={setConfirmPassword}
-              secureTextEntry
-              editable={!isSuccess}
-              placeholder="Confirm new password"
-              placeholderTextColor={COLORS.textSecondary}
-              style={{
-                color: COLORS.textPrimary,
-                height: 52,
-                fontSize: 15,
-              }}
-            />
-          </View>
+          />
 
           <View pointerEvents={isSuccess ? 'none' : 'auto'} style={{ opacity: isSuccess ? 0.55 : 1 }}>
             <PrimaryButton
