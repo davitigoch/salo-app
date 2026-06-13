@@ -7,6 +7,7 @@ export const ROUTES = {
   OnboardingWizard: 'OnboardingWizard',
   MainTabs: 'MainTabs',
   AddBooking: 'AddBooking',
+  BookingDetail: 'BookingDetail',
   AddClient: 'AddClient',
   Services: 'Services',
   AddService: 'AddService',

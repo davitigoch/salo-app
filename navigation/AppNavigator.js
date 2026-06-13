@@ -28,6 +28,7 @@ import LoginScreen from '../screens/LoginScreen';
 import ForgotPasswordScreen from '../screens/ForgotPasswordScreen';
 import ResetPasswordScreen from '../screens/ResetPasswordScreen';
 import AddBookingScreen from '../screens/AddBookingScreen';
+import BookingDetailScreen from '../screens/BookingDetailScreen';
 import AddClientScreen from '../screens/AddClientScreen';
 import ServicesScreen from '../screens/ServicesScreen';
 import AddServiceScreen from '../screens/AddServiceScreen';
@@ -1560,6 +1561,10 @@ export default function AppNavigator() {
                       <Stack.Screen
                         name={ROUTES.AddBooking}
                         component={AddBookingScreen}
+                      />
+                      <Stack.Screen
+                        name={ROUTES.BookingDetail}
+                        component={BookingDetailScreen}
                       />
                       <Stack.Screen
                         name={ROUTES.AddClient}

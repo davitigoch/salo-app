@@ -307,7 +307,7 @@ export default function BookingsScreen({ navigation, route }) {
               key={booking.id}
               activeOpacity={0.96}
               onPress={() =>
-                navigation.navigate(ROUTES.AddBooking, {
+                navigation.navigate(ROUTES.BookingDetail, {
                   bookingId: booking.id,
                 })
               }
