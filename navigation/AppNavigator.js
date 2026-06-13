@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import * as Notifications from 'expo-notifications';
 import * as Linking from 'expo-linking';
 import { NavigationContainer, getStateFromPath as getDefaultStateFromPath } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -17,6 +18,18 @@ import {
   cancelBookingReminders,
   syncBookingReminders,
 } from '../notifications/bookingReminders';
+import {
+  flushOwnerPushQueue,
+  registerOwnerPushToken,
+  unregisterOwnerPushToken,
+} from '../notifications/ownerPush';
+import {
+  fetchNotificationPreferences,
+} from '../utils/notificationPreferences';
+import {
+  navigateFromNotificationData,
+  navigationRef,
+} from './navigationRef';
 import {
   findClientForBooking,
   getUnlinkedBookings,
@@ -176,6 +189,7 @@ export default function AppNavigator() {
   const [isPasswordRecoveryPending, setIsPasswordRecoveryPending] = useState(false);
   const [passwordRecoveryLinkError, setPasswordRecoveryLinkError] = useState('');
   const bookingLinkBackfillRef = useRef(new Set());
+  const pendingNotificationDataRef = useRef(null);
 
   const handlePasswordResetUrl = useCallback(async (url) => {
     if (!isPasswordResetUrl(url)) {
@@ -727,8 +741,89 @@ export default function AppNavigator() {
       return;
     }
 
-    syncBookingReminders(bookings);
-  }, [bookings, session?.user?.id]);
+    (async () => {
+      const { data: preferences } = await fetchNotificationPreferences(business?.id);
+
+      await syncBookingReminders(bookings, {
+        soundEnabled: preferences?.owner_push_sound_enabled !== false,
+      });
+    })();
+  }, [bookings, business?.id, session?.user?.id]);
+
+  const tryNavigateFromPendingNotification = useCallback(async () => {
+    if (
+      !pendingNotificationDataRef.current
+      || !navigationRef.isReady()
+      || !session?.user?.id
+    ) {
+      return;
+    }
+
+    const notificationData = pendingNotificationDataRef.current;
+    pendingNotificationDataRef.current = null;
+
+    if (notificationData?.bookingId) {
+      await fetchBookings();
+    }
+
+    navigateFromNotificationData(notificationData);
+  }, [fetchBookings, session?.user?.id]);
+
+  useEffect(() => {
+    const responseSubscription = Notifications.addNotificationResponseReceivedListener((response) => {
+      pendingNotificationDataRef.current = response.notification.request.content.data;
+      tryNavigateFromPendingNotification();
+    });
+
+    Notifications.getLastNotificationResponseAsync().then((response) => {
+      if (!response) {
+        return;
+      }
+
+      pendingNotificationDataRef.current = response.notification.request.content.data;
+      tryNavigateFromPendingNotification();
+    });
+
+    return () => {
+      responseSubscription.remove();
+    };
+  }, [tryNavigateFromPendingNotification]);
+
+  useEffect(() => {
+    tryNavigateFromPendingNotification();
+  }, [tryNavigateFromPendingNotification]);
+
+  useEffect(() => {
+    if (!session?.user?.id) {
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    (async () => {
+      const { error, skipped } = await registerOwnerPushToken(session.user.id);
+
+      if (cancelled) {
+        return;
+      }
+
+      if (!skipped && !error) {
+        await flushOwnerPushQueue();
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.user?.id]);
+
+  useEffect(() => {
+    if (!session?.user?.id || !bookings.length) {
+      return;
+    }
+
+    flushOwnerPushQueue();
+  }, [bookings.length, session?.user?.id]);
 
   const fetchClients = useCallback(async () => {
     if (!session?.user?.id) {
@@ -1462,8 +1557,12 @@ export default function AppNavigator() {
   };
 
   const signOut = async () => {
+    const userId = session?.user?.id;
     const { error } = await supabase.auth.signOut();
     if (!error) {
+      if (userId) {
+        await unregisterOwnerPushToken(userId);
+      }
       await cancelBookingReminders();
       setSession(null);
       setBusiness(null);
@@ -1604,7 +1703,7 @@ export default function AppNavigator() {
         <ClientsProvider value={clientsValue}>
           <ServicesProvider value={servicesValue}>
             <StaffProvider value={staffValue}>
-              <NavigationContainer linking={linking}>
+              <NavigationContainer ref={navigationRef} linking={linking}>
                 <Stack.Navigator screenOptions={{ headerShown: false }}>
                 {isAuthLoading ? (
                   <Stack.Screen

@@ -14,7 +14,11 @@
     },
     "scheme": "salo",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.davgoch.saloapp",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -27,8 +31,19 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-notifications",
+      [
+        "expo-notifications",
+        {
+          "color": "#8B5CF6"
+        }
+      ],
       "@react-native-community/datetimepicker"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "daf0b1b4-e50a-4bc5-859c-2c4fd378576e"
+      }
+    },
+    "owner": "davgoch"
   }
 }

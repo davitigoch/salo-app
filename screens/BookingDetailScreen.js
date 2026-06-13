@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, Linking, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 
 import BackButton from '../components/BackButton';
@@ -169,9 +169,15 @@ function getStatusActions(status) {
 
 export default function BookingDetailScreen({ navigation, route }) {
   const bookingId = route?.params?.bookingId;
-  const { bookings, updateBooking } = useBookings();
+  const { bookings, updateBooking, fetchBookings, isBookingsLoading } = useBookings();
   const { staff } = useStaff();
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
+
+  useEffect(() => {
+    if (bookingId && !bookings.some((item) => item.id === bookingId)) {
+      fetchBookings();
+    }
+  }, [bookingId, bookings, fetchBookings]);
 
   const booking = useMemo(
     () => bookings.find((item) => item.id === bookingId),
@@ -234,11 +240,13 @@ export default function BookingDetailScreen({ navigation, route }) {
       <ScreenContainer centered style={{ padding: 24 }}>
         <BackButton navigation={navigation} />
         <Text style={{ color: COLORS.textPrimary, fontSize: 20, fontWeight: '700' }}>
-          Booking not found
+          {isBookingsLoading ? 'Loading booking...' : 'Booking not found'}
         </Text>
-        <Text style={{ color: COLORS.textSecondary, marginTop: 8, textAlign: 'center' }}>
-          This booking may have been removed or is no longer available.
-        </Text>
+        {!isBookingsLoading ? (
+          <Text style={{ color: COLORS.textSecondary, marginTop: 8, textAlign: 'center' }}>
+            This booking may have been removed or is no longer available.
+          </Text>
+        ) : null}
       </ScreenContainer>
     );
   }

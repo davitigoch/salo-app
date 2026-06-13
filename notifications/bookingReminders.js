@@ -60,7 +60,7 @@ export async function cancelBookingReminders() {
   );
 }
 
-export async function syncBookingReminders(bookings) {
+export async function syncBookingReminders(bookings, { soundEnabled = true } = {}) {
   const permissions = await Notifications.getPermissionsAsync();
   if (permissions.status !== 'granted') {
     return;
@@ -91,7 +91,7 @@ export async function syncBookingReminders(bookings) {
         content: {
           title: 'SALO appointment reminder',
           body: getReminderBody(booking),
-          sound: true,
+          sound: soundEnabled,
           data: {
             type: REMINDER_TYPE,
             bookingId: booking.id,
