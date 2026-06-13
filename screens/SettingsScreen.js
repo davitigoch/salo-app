@@ -58,7 +58,7 @@ export default function SettingsScreen({ navigation }) {
     }
   };
 
-  const publicBookingLink = getPublicBookingUrl(business?.slug);
+  const publicBookingLink = getPublicBookingUrl(business);
 
   const onCopyPublicLink = async () => {
     if (!publicBookingLink) {

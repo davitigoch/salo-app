@@ -1,4 +1,4 @@
-const DEV_FALLBACK_BOOKING_SITE_URL = 'https://salo-web-gamma.vercel.app';
+const DEFAULT_BOOKING_SITE_URL = 'https://salo-web-gamma.vercel.app';
 
 function stripTrailingSlash(value) {
   return String(value || '').trim().replace(/\/+$/, '');
@@ -11,15 +11,26 @@ export function getBookingSiteBaseUrl() {
     return fromEnv;
   }
 
-  if (typeof __DEV__ !== 'undefined' && __DEV__) {
-    return DEV_FALLBACK_BOOKING_SITE_URL;
-  }
-
-  return '';
+  return DEFAULT_BOOKING_SITE_URL;
 }
 
-export function getPublicBookingUrl(slug) {
-  const normalizedSlug = String(slug || '').trim();
+export function getBusinessPublicBookingSlug(business) {
+  return String(business?.public_slug || business?.slug || '')
+    .trim()
+    .replace(/^\/+|\/+$/g, '')
+    .replace(/^book\//i, '')
+    .toLowerCase();
+}
+
+export function getPublicBookingUrl(slugOrBusiness) {
+  const normalizedSlug =
+    typeof slugOrBusiness === 'object' && slugOrBusiness !== null
+      ? getBusinessPublicBookingSlug(slugOrBusiness)
+      : String(slugOrBusiness || '')
+          .trim()
+          .replace(/^\/+|\/+$/g, '')
+          .replace(/^book\//i, '')
+          .toLowerCase();
 
   if (!normalizedSlug) {
     return '';

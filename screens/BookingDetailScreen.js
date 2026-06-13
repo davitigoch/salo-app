@@ -11,8 +11,15 @@ import {
 } from '../constants/bookingStatus';
 import { COLORS } from '../constants/colors';
 import { ROUTES } from '../constants/routes';
+import { supabase } from '../constants/supabase';
 import { useBookings } from '../context/BookingsContext';
 import { useStaff } from '../context/StaffContext';
+import {
+  formatCurrency,
+  getBookingPaymentSummary,
+  getChargeModeLabel,
+  getPaymentStatusLabel,
+} from '../utils/stripePayments';
 
 function formatTimeLabel(timeValue) {
   const parts = String(timeValue || '').split(':').map(Number);
@@ -172,6 +179,8 @@ export default function BookingDetailScreen({ navigation, route }) {
   const { bookings, updateBooking, fetchBookings, isBookingsLoading } = useBookings();
   const { staff } = useStaff();
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
+  const [paymentRow, setPaymentRow] = useState(null);
+  const [isPaymentLoading, setIsPaymentLoading] = useState(false);
 
   useEffect(() => {
     if (bookingId && !bookings.some((item) => item.id === bookingId)) {
@@ -183,6 +192,36 @@ export default function BookingDetailScreen({ navigation, route }) {
     () => bookings.find((item) => item.id === bookingId),
     [bookings, bookingId]
   );
+
+  useEffect(() => {
+    async function loadPayment() {
+      if (!bookingId) {
+        setPaymentRow(null);
+        return;
+      }
+
+      setIsPaymentLoading(true);
+
+      const { data, error } = await supabase
+        .from('payments')
+        .select('id, amount, status, metadata, paid_at, created_at')
+        .eq('booking_id', bookingId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      setIsPaymentLoading(false);
+
+      if (error) {
+        setPaymentRow(null);
+        return;
+      }
+
+      setPaymentRow(data || null);
+    }
+
+    loadPayment();
+  }, [bookingId, booking?.booking_metadata?.payment_status]);
 
   const staffName = useMemo(() => {
     if (!booking) {
@@ -259,6 +298,7 @@ export default function BookingDetailScreen({ navigation, route }) {
   const isReadOnly = statusActions.length === 0;
   const customerPhone = String(booking.customer_phone || '').trim();
   const customerEmail = String(booking.customer_email || '').trim();
+  const paymentSummary = getBookingPaymentSummary(booking, paymentRow);
 
   return (
     <ScreenContainer style={{ paddingTop: 0 }}>
@@ -334,8 +374,30 @@ export default function BookingDetailScreen({ navigation, route }) {
           <DetailRow label="Staff" value={staffName || 'Unassigned'} />
           <DetailRow label="Date" value={booking.date} />
           <DetailRow label="Time" value={formatTimeLabel(booking.time)} />
-          <DetailRow label="Price" value={`$${Number(booking.price || 0).toFixed(2)}`} />
+          <DetailRow label="Price" value={formatCurrency(paymentSummary.servicePrice)} />
           <DetailRow label="Notes" value={booking.notes || 'No notes'} />
+        </DetailSection>
+
+        <DetailSection title="Payment">
+          {isPaymentLoading ? (
+            <Text style={{ color: COLORS.textSecondary }}>Loading payment details...</Text>
+          ) : (
+            <>
+              <DetailRow
+                label="Payment Status"
+                value={getPaymentStatusLabel(paymentSummary.paymentStatus)}
+              />
+              <DetailRow
+                label="Charge Mode"
+                value={getChargeModeLabel(paymentSummary.chargeMode)}
+              />
+              <DetailRow
+                label="Deposit Paid"
+                value={formatCurrency(paymentSummary.depositPaid)}
+              />
+              <DetailRow label="Amount Due" value={formatCurrency(paymentSummary.amountDue)} />
+            </>
+          )}
         </DetailSection>
 
         <DetailSection title="Booking Info">

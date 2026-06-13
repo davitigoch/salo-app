@@ -23,6 +23,12 @@ import {
 import ScreenContainer from '../components/ScreenContainer';
 import { COLORS } from '../constants/colors';
 import { supabase } from '../constants/supabase';
+import { getEdgeFunctionErrorMessage } from '../utils/edgeFunctions';
+import {
+  isPublicBookingPaymentRequired,
+  isPublicBookingStripeReady,
+  logPublicBookingPaymentSettings,
+} from '../utils/stripePayments';
 
 function Field({
   label,
@@ -180,7 +186,9 @@ export default function PublicBookingScreen({ route }) {
 
       const { data, error: businessError } = await supabase
         .from('businesses')
-        .select('id, owner_user_id, business_name, slug, description, timezone, public_booking_enabled, deposits_enabled, deposit_percentage, require_card_on_booking')
+        .select(
+          'id, owner_user_id, business_name, slug, description, timezone, public_booking_enabled, stripe_account_id, stripe_charges_enabled, deposits_enabled, deposit_percentage, require_card_on_booking'
+        )
         .eq('slug', slug)
         .eq('public_booking_enabled', true)
         .single();
@@ -192,6 +200,8 @@ export default function PublicBookingScreen({ route }) {
         setIsLoading(false);
         return;
       }
+
+      logPublicBookingPaymentSettings(data);
 
       const { data: servicesData, error: servicesError } = await supabase
         .from('services')
@@ -503,11 +513,15 @@ export default function PublicBookingScreen({ route }) {
       },
     };
 
-    const paymentRequired = Boolean(
-      business?.deposits_enabled || business?.require_card_on_booking
-    );
+    logPublicBookingPaymentSettings(business);
 
-    if (!paymentRequired) {
+    const isPaymentRequired = isPublicBookingPaymentRequired(business);
+    const isStripeReady = isPublicBookingStripeReady(business);
+
+    console.log('[SALO] payment required', isPaymentRequired);
+    console.log('[SALO] stripe ready', isStripeReady);
+
+    if (!isPaymentRequired) {
       const { error: insertError } = await createPublicBookingWithoutPayment(basePayload);
 
       setIsSubmitting(false);
@@ -524,9 +538,17 @@ export default function PublicBookingScreen({ route }) {
       return;
     }
 
+    if (!isStripeReady) {
+      setIsSubmitting(false);
+      Alert.alert('Payment unavailable', 'This salon has not finished payment setup.');
+      return;
+    }
+
     const callbackBaseUrl = ExpoLinking.createURL('public-booking-payment');
     const successUrl = `${callbackBaseUrl}?status=success&session_id={CHECKOUT_SESSION_ID}`;
     const cancelUrl = `${callbackBaseUrl}?status=cancel`;
+
+    console.log('[SALO] creating checkout session');
 
     const { data: checkoutData, error: checkoutError } = await supabase.functions.invoke(
       'create-stripe-checkout-session',
@@ -536,38 +558,27 @@ export default function PublicBookingScreen({ route }) {
           serviceId: selectedService.id,
           clientName: clientName.trim(),
           customerEmail: email.trim(),
-          paymentMode: business.deposits_enabled ? 'auto' : 'full',
+          paymentMode: business.deposits_enabled === true ? 'auto' : 'full',
           successUrl,
           cancelUrl,
         },
       }
     );
 
-    if (checkoutError) {
+    if (checkoutError || checkoutData?.error) {
       setIsSubmitting(false);
-      Alert.alert('Payment init failed', checkoutError.message);
-      return;
-    }
-
-    if (checkoutData?.error) {
-      setIsSubmitting(false);
-      Alert.alert('Payment init failed', checkoutData.error);
+      const message = await getEdgeFunctionErrorMessage({ error: checkoutError, data: checkoutData });
+      Alert.alert('Payment init failed', message);
       return;
     }
 
     if (!checkoutData?.requiresPayment || !checkoutData?.checkoutUrl) {
-      const { error: insertError } = await createPublicBookingWithoutPayment(basePayload);
-
       setIsSubmitting(false);
-
-      if (insertError) {
-        Alert.alert('Booking failed', insertError.message);
-        return;
-      }
-
-      setSuccessMessage('Your appointment has been requested. We will confirm it shortly.');
-      resetBookingForm();
-      appendLocalBookedSlot();
+      Alert.alert(
+        'Payment required',
+        checkoutData?.reason ||
+          'Unable to start payment. Please try again or contact the salon.'
+      );
       return;
     }
 
@@ -1023,7 +1034,7 @@ export default function PublicBookingScreen({ route }) {
             title={
               isSubmitting
                 ? 'Processing...'
-                : business?.deposits_enabled || business?.require_card_on_booking
+                : isPublicBookingPaymentRequired(business)
                   ? 'Continue to Payment'
                   : 'Confirm Booking'
             }

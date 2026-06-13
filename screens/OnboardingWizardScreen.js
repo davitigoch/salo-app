@@ -26,6 +26,13 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { useServices } from '../context/ServicesContext';
 import { useStaff } from '../context/StaffContext';
+import SegmentedControl from '../components/SegmentedControl';
+import {
+  getBusinessPaymentSettingsFromMode,
+  getPaymentModeFromBusiness,
+  PAYMENT_MODE_OPTIONS,
+  PAYMENT_MODES,
+} from '../utils/stripePayments';
 
 const STEPS = [
   'Business Profile',
@@ -117,9 +124,8 @@ export default function OnboardingWizardScreen({ navigation }) {
 
   const [draftHours, setDraftHours] = useState(DEFAULT_BUSINESS_HOURS);
 
-  const [depositsEnabled, setDepositsEnabled] = useState(false);
+  const [paymentMode, setPaymentMode] = useState(PAYMENT_MODES.NONE);
   const [depositPercentage, setDepositPercentage] = useState('30');
-  const [requireCardOnBooking, setRequireCardOnBooking] = useState(false);
   const [publicBookingEnabled, setPublicBookingEnabled] = useState(true);
 
   useEffect(() => {
@@ -130,9 +136,8 @@ export default function OnboardingWizardScreen({ navigation }) {
     setBusinessName(business.business_name || '');
     setBusinessDescription(business.description || '');
     setTimezone(business.timezone || 'UTC');
-    setDepositsEnabled(Boolean(business.deposits_enabled));
+    setPaymentMode(getPaymentModeFromBusiness(business));
     setDepositPercentage(String(Number(business.deposit_percentage ?? 30)));
-    setRequireCardOnBooking(Boolean(business.require_card_on_booking));
     setPublicBookingEnabled(business.public_booking_enabled !== false);
   }, [business]);
 
@@ -143,11 +148,11 @@ export default function OnboardingWizardScreen({ navigation }) {
   const bookingUrl = useMemo(() => {
     if (!business?.slug) {
       const baseUrl = getBookingSiteBaseUrl();
-      return baseUrl ? `${baseUrl}/book/your-salon-slug` : '';
+      return `${baseUrl}/book/your-salon-slug`;
     }
 
-    return getPublicBookingUrl(business.slug);
-  }, [business?.slug]);
+    return getPublicBookingUrl(business);
+  }, [business]);
 
   const completedFlags = useMemo(() => {
     const profileDone = Boolean(businessName.trim()) && Boolean(timezone.trim());
@@ -284,18 +289,17 @@ export default function OnboardingWizardScreen({ navigation }) {
   };
 
   const onSavePayment = async () => {
-    const parsed = Number.parseFloat(depositPercentage);
-    if (Number.isNaN(parsed) || parsed < 0 || parsed > 100) {
-      Alert.alert('Invalid deposit', 'Deposit percentage must be between 0 and 100.');
-      return false;
+    if (paymentMode === PAYMENT_MODES.DEPOSIT) {
+      const parsed = Number.parseFloat(depositPercentage);
+      if (Number.isNaN(parsed) || parsed <= 0 || parsed > 100) {
+        Alert.alert('Invalid deposit', 'Deposit percentage must be between 1 and 100.');
+        return false;
+      }
     }
 
     setIsSaving(true);
-    const { error } = await saveBusinessPaymentSettings({
-      deposits_enabled: depositsEnabled,
-      deposit_percentage: Number(parsed.toFixed(2)),
-      require_card_on_booking: requireCardOnBooking,
-    });
+    const settings = getBusinessPaymentSettingsFromMode(paymentMode, depositPercentage);
+    const { error } = await saveBusinessPaymentSettings(settings);
     setIsSaving(false);
 
     if (error) {
@@ -577,59 +581,25 @@ export default function OnboardingWizardScreen({ navigation }) {
                 <Text style={{ color: COLORS.textPrimary, fontSize: 20, fontWeight: '700', marginBottom: 10 }}>
                   Payment settings (optional)
                 </Text>
-                <View
-                  style={{
-                    backgroundColor: '#14141B',
-                    borderRadius: 12,
-                    borderWidth: 1,
-                    borderColor: '#2A2A34',
-                    padding: 12,
-                    marginBottom: 10,
-                    flexDirection: 'row',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                  }}
-                >
-                  <Text style={{ color: COLORS.textPrimary, fontWeight: '600' }}>Enable deposits</Text>
-                  <Switch
-                    value={depositsEnabled}
-                    onValueChange={setDepositsEnabled}
-                    trackColor={{ false: '#353543', true: '#5B21B6' }}
-                    thumbColor={depositsEnabled ? '#A78BFA' : '#9CA3AF'}
-                  />
-                </View>
+                <Text style={{ color: COLORS.textSecondary, marginBottom: 12, lineHeight: 20 }}>
+                  You can connect Stripe later in Settings. Choose how public bookings should collect payment.
+                </Text>
 
-                <Field
-                  label="Deposit percentage"
-                  value={depositPercentage}
-                  onChangeText={setDepositPercentage}
-                  placeholder="30"
-                  keyboardType="decimal-pad"
+                <SegmentedControl
+                  options={PAYMENT_MODE_OPTIONS}
+                  value={paymentMode}
+                  onChange={setPaymentMode}
                 />
 
-                <View
-                  style={{
-                    backgroundColor: '#14141B',
-                    borderRadius: 12,
-                    borderWidth: 1,
-                    borderColor: '#2A2A34',
-                    padding: 12,
-                    marginTop: 4,
-                    flexDirection: 'row',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                  }}
-                >
-                  <Text style={{ color: COLORS.textPrimary, fontWeight: '600', flex: 1, paddingRight: 8 }}>
-                    Require card on booking
-                  </Text>
-                  <Switch
-                    value={requireCardOnBooking}
-                    onValueChange={setRequireCardOnBooking}
-                    trackColor={{ false: '#353543', true: '#5B21B6' }}
-                    thumbColor={requireCardOnBooking ? '#A78BFA' : '#9CA3AF'}
+                {paymentMode === PAYMENT_MODES.DEPOSIT ? (
+                  <Field
+                    label="Deposit percentage"
+                    value={depositPercentage}
+                    onChangeText={setDepositPercentage}
+                    placeholder="30"
+                    keyboardType="decimal-pad"
                   />
-                </View>
+                ) : null}
               </>
             ) : null}
 

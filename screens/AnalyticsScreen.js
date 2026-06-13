@@ -1,9 +1,11 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { ScrollView, Text, View } from 'react-native';
 
 import BackButton from '../components/BackButton';
 import ScreenContainer from '../components/ScreenContainer';
 import { COLORS } from '../constants/colors';
+import { supabase } from '../constants/supabase';
+import { useAuth } from '../context/AuthContext';
 import { useBookings } from '../context/BookingsContext';
 import { useClients } from '../context/ClientsContext';
 import { useStaff } from '../context/StaffContext';
@@ -72,9 +74,40 @@ function formatCurrency(value) {
 }
 
 export default function AnalyticsScreen({ navigation }) {
+  const { business } = useAuth();
   const { bookings, isBookingsLoading } = useBookings();
   const { clients, isClientsLoading } = useClients();
   const { staff, isStaffLoading } = useStaff();
+  const [payments, setPayments] = useState([]);
+  const [isPaymentsLoading, setIsPaymentsLoading] = useState(false);
+
+  useEffect(() => {
+    async function loadPayments() {
+      if (!business?.id) {
+        setPayments([]);
+        return;
+      }
+
+      setIsPaymentsLoading(true);
+
+      const { data, error } = await supabase
+        .from('payments')
+        .select('id, amount, status, metadata, paid_at, created_at')
+        .eq('business_id', business.id)
+        .order('created_at', { ascending: false });
+
+      setIsPaymentsLoading(false);
+
+      if (error) {
+        setPayments([]);
+        return;
+      }
+
+      setPayments(Array.isArray(data) ? data : []);
+    }
+
+    loadPayments();
+  }, [business?.id]);
 
   const analytics = useMemo(
     () =>
@@ -82,11 +115,12 @@ export default function AnalyticsScreen({ navigation }) {
         bookings,
         clients,
         staff,
+        payments,
       }),
-    [bookings, clients, staff]
+    [bookings, clients, staff, payments]
   );
 
-  const isLoading = isBookingsLoading || isClientsLoading || isStaffLoading;
+  const isLoading = isBookingsLoading || isClientsLoading || isStaffLoading || isPaymentsLoading;
 
   return (
     <ScreenContainer style={{ paddingTop: 0 }}>
@@ -126,9 +160,14 @@ export default function AnalyticsScreen({ navigation }) {
             <SectionCard title="Revenue">
               <MetricRow label="Revenue Today" value={formatCurrency(analytics.revenueToday)} />
               <MetricRow label="Revenue This Week" value={formatCurrency(analytics.revenueThisWeek)} />
+              <MetricRow label="Revenue This Month" value={formatCurrency(analytics.revenueThisMonth)} />
               <MetricRow
-                label="Revenue This Month"
-                value={formatCurrency(analytics.revenueThisMonth)}
+                label="Revenue Collected Online"
+                value={formatCurrency(analytics.revenueCollectedOnline)}
+              />
+              <MetricRow
+                label="Deposit Revenue"
+                value={formatCurrency(analytics.depositRevenue)}
                 isLast
               />
             </SectionCard>

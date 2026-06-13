@@ -1,4 +1,5 @@
 import { isPendingPublicRequest } from '../constants/bookingStatus';
+import { computeOnlinePaymentAnalytics } from './stripePayments';
 import { parseBookingDateTime } from './bookings';
 
 const REVENUE_STATUSES = new Set(['confirmed', 'completed']);
@@ -73,6 +74,7 @@ export function computeOwnerAnalytics({
   bookings = [],
   clients = [],
   staff = [],
+  payments = [],
   now = new Date(),
 }) {
   const todayKey = toDateKey(now);
@@ -134,12 +136,15 @@ export function computeOwnerAnalytics({
 
   const topService = getTopEntry(serviceCounts);
   const topStaff = getTopEntry(staffCounts);
+  const { revenueCollectedOnline, depositRevenue } = computeOnlinePaymentAnalytics(payments);
 
   return {
-    hasData: bookings.length > 0,
+    hasData: bookings.length > 0 || payments.length > 0,
     revenueToday,
     revenueThisWeek,
     revenueThisMonth,
+    revenueCollectedOnline,
+    depositRevenue,
     appointmentsToday,
     appointmentsThisWeek,
     pendingRequests,
