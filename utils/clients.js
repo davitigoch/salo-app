@@ -23,6 +23,91 @@ export function formatBookingLabel(booking) {
   return `${booking.date} at ${booking.time || '--:--'}`;
 }
 
+export function formatShortBookingDate(booking) {
+  if (!booking?.date) {
+    return '—';
+  }
+
+  const appointmentDate = parseBookingDateTime(booking);
+
+  if (!appointmentDate) {
+    return booking.date;
+  }
+
+  return appointmentDate.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+  });
+}
+
+export function getClientInitials(clientName) {
+  const parts = String(clientName || '').trim().split(/\s+/).filter(Boolean);
+
+  if (parts.length >= 2) {
+    return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+  }
+
+  if (parts.length === 1) {
+    return parts[0].slice(0, 2).toUpperCase();
+  }
+
+  return '?';
+}
+
+function getTimelineEventLabel(booking, now = new Date()) {
+  const status = booking.status || 'confirmed';
+  const appointmentDate = parseBookingDateTime(booking);
+  const isFuture = appointmentDate && appointmentDate.getTime() >= now.getTime();
+
+  switch (status) {
+    case 'completed':
+      return 'Appointment completed';
+    case 'cancelled':
+      return 'Appointment cancelled';
+    case 'no_show':
+      return 'No-show recorded';
+    case 'pending':
+      return 'Appointment requested';
+    case 'confirmed':
+      return isFuture ? 'Appointment booked' : 'Appointment completed';
+    default:
+      return isFuture ? 'Appointment booked' : 'Appointment completed';
+  }
+}
+
+function formatTimelineDate(booking) {
+  const appointmentDate = parseBookingDateTime(booking);
+
+  if (!appointmentDate) {
+    return String(booking?.date || 'Unknown date');
+  }
+
+  return appointmentDate.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+  });
+}
+
+export function getClientTimelineEvents(client, bookings, now = new Date()) {
+  const clientBookings = getClientBookingsForClient(client, bookings);
+
+  return clientBookings
+    .map((booking) => {
+      const appointmentDate = parseBookingDateTime(booking);
+      const fallbackDate = booking.created_at ? new Date(booking.created_at) : null;
+      const sortDate = appointmentDate || fallbackDate;
+
+      return {
+        id: booking.id,
+        booking,
+        dateLabel: formatTimelineDate(booking),
+        label: getTimelineEventLabel(booking, now),
+        sortTime: sortDate ? sortDate.getTime() : 0,
+      };
+    })
+    .sort((first, second) => second.sortTime - first.sortTime);
+}
+
 export function getClientBookingsForClient(client, bookings) {
   const clientName = normalizeClientName(client?.client_name);
 
