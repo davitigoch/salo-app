@@ -229,7 +229,7 @@ begin
   limit 1;
 
   insert into public.sms_notifications (
-    business_id, booking_id, event_type, customer_phone, status, last_error
+    business_id, booking_id, notification_type, phone_number, status, last_error
   ) values (
     v_business_id, v_booking_id, 'booking_confirmed', '555-0200', 'failed',
     'Twilio unreachable (verify fixture)'

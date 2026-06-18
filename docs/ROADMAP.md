@@ -101,6 +101,28 @@ Centralized in-app notification center for business owners — a durable feed be
 
 ---
 
+## In progress / next
+
+### SMS Reminders — Foundation 🎯
+
+Client SMS for appointment updates and reminders with **mock provider** (no Twilio required for dev).
+
+**Design doc:** [sms-reminders-foundation.md](./sms-reminders-foundation.md)
+
+**Status:** Foundation implemented (`20260705_sms_reminders_foundation.sql`, `send-sms-notifications`).
+
+| Component | Status |
+|-----------|--------|
+| `sms_notifications` queue table | Implemented |
+| Booking enqueue (confirmed / rescheduled / cancelled) | Implemented |
+| 24h / 2h reminder scheduling | Implemented |
+| `send-sms-notifications` worker (mock default) | Implemented |
+| Failure → Notification Center | Implemented |
+
+**Deferred:** Cron scheduler, Twilio delivery webhooks, owner reminder settings UI.
+
+---
+
 ## Planned (after PR4)
 
 | Area | Summary |
