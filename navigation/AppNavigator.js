@@ -69,6 +69,8 @@ import DailyScheduleScreen from '../screens/DailyScheduleScreen';
 import OnboardingWizardScreen from '../screens/OnboardingWizardScreen';
 import PaymentSettingsScreen from '../screens/PaymentSettingsScreen';
 import NotificationSettingsScreen from '../screens/NotificationSettingsScreen';
+import NotificationsScreen from '../screens/NotificationsScreen';
+import NotificationDetailScreen from '../screens/NotificationDetailScreen';
 import CalendarSettingsScreen from '../screens/CalendarSettingsScreen';
 import AnalyticsScreen from '../screens/AnalyticsScreen';
 import PublicBookingScreen from '../screens/PublicBookingScreen';
@@ -1881,6 +1883,14 @@ export default function AppNavigator() {
                       <Stack.Screen
                         name={ROUTES.NotificationSettings}
                         component={NotificationSettingsScreen}
+                      />
+                      <Stack.Screen
+                        name={ROUTES.Notifications}
+                        component={NotificationsScreen}
+                      />
+                      <Stack.Screen
+                        name={ROUTES.NotificationDetail}
+                        component={NotificationDetailScreen}
                       />
                       <Stack.Screen
                         name={ROUTES.CalendarSettings}

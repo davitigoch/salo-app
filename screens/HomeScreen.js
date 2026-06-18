@@ -253,7 +253,9 @@ export default function HomeScreen({ navigation }) {
               Owner Dashboard
             </Text>
           </View>
-          <View
+          <TouchableOpacity
+            onPress={() => navigation.navigate(ROUTES.Notifications)}
+            activeOpacity={0.85}
             style={{
               width: 44,
               height: 44,
@@ -294,7 +296,7 @@ export default function HomeScreen({ navigation }) {
                 </Text>
               </View>
             ) : null}
-          </View>
+          </TouchableOpacity>
         </View>
 
         <Text

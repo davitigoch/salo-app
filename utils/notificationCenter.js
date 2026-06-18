@@ -107,3 +107,135 @@ export function formatNotificationBadgeCount(count) {
 
   return String(value);
 }
+
+export function getNotificationBookingId(notification) {
+  if (!notification) {
+    return null;
+  }
+
+  if (notification.entityType === 'booking' && notification.entityId) {
+    return notification.entityId;
+  }
+
+  const metadataBookingId = notification.metadata?.booking_id;
+
+  if (metadataBookingId) {
+    return String(metadataBookingId);
+  }
+
+  return null;
+}
+
+export function shouldOpenNotificationDetail(notification) {
+  if (!notification) {
+    return true;
+  }
+
+  if (
+    notification.eventType === 'calendar_sync_failed' ||
+    notification.eventType === 'message_delivery_failed'
+  ) {
+    return true;
+  }
+
+  return !getNotificationBookingId(notification);
+}
+
+export function formatNotificationTimestamp(value) {
+  if (!value) {
+    return '';
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return '';
+  }
+
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffMinutes = Math.floor(diffMs / 60000);
+
+  if (diffMinutes < 1) {
+    return 'Just now';
+  }
+
+  if (diffMinutes < 60) {
+    return `${diffMinutes}m ago`;
+  }
+
+  const diffHours = Math.floor(diffMinutes / 60);
+
+  if (diffHours < 24) {
+    return `${diffHours}h ago`;
+  }
+
+  const diffDays = Math.floor(diffHours / 24);
+
+  if (diffDays < 7) {
+    return `${diffDays}d ago`;
+  }
+
+  return date.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined,
+  });
+}
+
+export function getNotificationIconName(eventType) {
+  switch (eventType) {
+    case 'booking_created':
+      return 'calendar-outline';
+    case 'booking_confirmed':
+      return 'checkmark-circle-outline';
+    case 'booking_cancelled':
+      return 'close-circle-outline';
+    case 'booking_rescheduled':
+      return 'time-outline';
+    case 'public_booking_request':
+      return 'mail-open-outline';
+    case 'payment_received':
+      return 'card-outline';
+    case 'calendar_sync_failed':
+      return 'cloud-offline-outline';
+    case 'message_delivery_failed':
+      return 'alert-circle-outline';
+    default:
+      return 'notifications-outline';
+  }
+}
+
+export function getNotificationAccentColor(severity) {
+  switch (severity) {
+    case 'success':
+      return '#34D399';
+    case 'warning':
+      return '#FBBF24';
+    default:
+      return '#A78BFA';
+  }
+}
+
+export function getNotificationEventLabel(eventType) {
+  switch (eventType) {
+    case 'booking_created':
+      return 'Appointment created';
+    case 'booking_confirmed':
+      return 'Appointment confirmed';
+    case 'booking_cancelled':
+      return 'Appointment cancelled';
+    case 'booking_rescheduled':
+      return 'Appointment rescheduled';
+    case 'public_booking_request':
+      return 'Booking request';
+    case 'payment_received':
+      return 'Payment received';
+    case 'calendar_sync_failed':
+      return 'Calendar sync failed';
+    case 'message_delivery_failed':
+      return 'Message delivery failed';
+    default:
+      return 'Notification';
+  }
+}
