@@ -34,6 +34,7 @@ import {
   findClientForBooking,
   getUnlinkedBookings,
   syncClientFromConfirmedPublicBooking,
+  syncClientFromOwnerBooking,
 } from '../utils/clients';
 import {
   buildClientInsertPayload,
@@ -1125,6 +1126,51 @@ export default function AppNavigator() {
     session?.user?.id,
   ]);
 
+  const linkBookingToClient = async (bookingId, clientId, currentBooking) => {
+    if (!clientId || currentBooking?.client_id === clientId) {
+      return { error: null, data: currentBooking };
+    }
+
+    const { data: linkedBooking, error: linkError } = await supabase
+      .from('bookings')
+      .update({ client_id: clientId })
+      .eq('id', bookingId)
+      .eq('user_id', session.user.id)
+      .select(BOOKING_SELECT_COLUMNS)
+      .single();
+
+    if (linkError || !linkedBooking) {
+      return { error: linkError, data: currentBooking };
+    }
+
+    setBookings((previousBookings) =>
+      previousBookings.map((booking) =>
+        booking.id === bookingId ? linkedBooking : booking
+      )
+    );
+
+    return { error: null, data: linkedBooking };
+  };
+
+  const syncOwnerBookingClient = async (booking) => {
+    if (!booking || (booking.booking_source || 'owner') !== 'owner') {
+      return { error: null, data: booking };
+    }
+
+    const syncResult = await syncClientFromOwnerBooking({
+      booking,
+      clients,
+      addClient,
+      updateClient,
+    });
+
+    if (syncResult.error || !syncResult.clientId) {
+      return { error: syncResult.error, data: booking };
+    }
+
+    return linkBookingToClient(booking.id, syncResult.clientId, booking);
+  };
+
   const addBooking = useCallback(async (bookingInput) => {
     if (!session?.user?.id) {
       return { error: { message: 'User is not authenticated.' } };
@@ -1156,9 +1202,20 @@ export default function AppNavigator() {
       return { error };
     }
 
-    setBookings((previousBookings) => [data, ...previousBookings]);
-    return { error: null, data };
-  }, [business?.id, business?.slug, session?.user?.id]);
+    const linkResult = await syncOwnerBookingClient(data);
+    const savedBooking = linkResult.data || data;
+
+    if (!linkResult.error) {
+      setBookings((previousBookings) => {
+        const withoutSaved = previousBookings.filter((booking) => booking.id !== savedBooking.id);
+        return [savedBooking, ...withoutSaved];
+      });
+    } else {
+      setBookings((previousBookings) => [data, ...previousBookings]);
+    }
+
+    return { error: null, data: savedBooking };
+  }, [addClient, business?.id, business?.slug, clients, session?.user?.id, updateClient]);
 
   const updateBooking = async (bookingId, bookingInput) => {
     if (!session?.user?.id) {
@@ -1200,24 +1257,22 @@ export default function AppNavigator() {
         updateClient,
       });
 
-      if (!syncResult.error && syncResult.clientId && data.client_id !== syncResult.clientId) {
-        const { data: linkedBooking, error: linkError } = await supabase
-          .from('bookings')
-          .update({ client_id: syncResult.clientId })
-          .eq('id', bookingId)
-          .eq('user_id', session.user.id)
-          .select(BOOKING_SELECT_COLUMNS)
-          .single();
+      if (!syncResult.error && syncResult.clientId) {
+        const linkResult = await linkBookingToClient(
+          bookingId,
+          syncResult.clientId,
+          data
+        );
 
-        if (!linkError && linkedBooking) {
-          setBookings((previousBookings) =>
-            previousBookings.map((booking) =>
-              booking.id === bookingId ? linkedBooking : booking
-            )
-          );
-
-          return { error: null, data: linkedBooking };
+        if (!linkResult.error && linkResult.data) {
+          return { error: null, data: linkResult.data };
         }
+      }
+    } else if ((data?.booking_source || 'owner') === 'owner') {
+      const linkResult = await syncOwnerBookingClient(data);
+
+      if (!linkResult.error && linkResult.data) {
+        return { error: null, data: linkResult.data };
       }
     }
 

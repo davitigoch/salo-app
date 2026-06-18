@@ -391,11 +391,12 @@ export function shouldSyncClientOnConfirm(previousBooking, updatedBooking) {
   return updatedBooking.booking_source === 'public';
 }
 
-export async function syncClientFromConfirmedPublicBooking({
+export async function syncClientFromBookingContact({
   booking,
   clients,
   addClient,
   updateClient,
+  source = 'owner_created',
 }) {
   const email = normalizeEmail(booking?.customer_email);
   const phone = normalizePhone(booking?.customer_phone);
@@ -410,11 +411,37 @@ export async function syncClientFromConfirmedPublicBooking({
     const linkedClient = clients.find((client) => client.id === booking.client_id) || null;
 
     if (linkedClient) {
+      const updates = {};
+
+      if (!String(linkedClient.phone || '').trim() && booking.customer_phone?.trim()) {
+        updates.phone = booking.customer_phone.trim();
+      }
+
+      if (!String(linkedClient.email || '').trim() && booking.customer_email?.trim()) {
+        updates.email = booking.customer_email.trim();
+      }
+
+      if (!String(linkedClient.client_name || '').trim() && clientName) {
+        updates.client_name = clientName;
+      }
+
+      if (!String(linkedClient.notes || '').trim() && bookingNotes) {
+        updates.notes = bookingNotes;
+      }
+
+      if (Object.keys(updates).length) {
+        const { error } = await updateClient(linkedClient.id, updates);
+
+        if (error) {
+          return { error, clientId: null };
+        }
+      }
+
       return { error: null, clientId: linkedClient.id };
     }
   }
 
-  let existingClient = findClientForBooking(booking, clients);
+  const existingClient = findClientForBooking(booking, clients);
 
   if (existingClient) {
     const updates = {};
@@ -451,7 +478,7 @@ export async function syncClientFromConfirmedPublicBooking({
     phone: String(booking.customer_phone || '').trim(),
     email: String(booking.customer_email || '').trim(),
     notes: bookingNotes,
-    source: 'public_booking',
+    source,
     business_id: booking.business_id || null,
   });
 
@@ -460,4 +487,18 @@ export async function syncClientFromConfirmedPublicBooking({
   }
 
   return { error: null, clientId: data?.id || null };
+}
+
+export async function syncClientFromConfirmedPublicBooking(args) {
+  return syncClientFromBookingContact({
+    ...args,
+    source: 'public_booking',
+  });
+}
+
+export async function syncClientFromOwnerBooking(args) {
+  return syncClientFromBookingContact({
+    ...args,
+    source: 'owner_created',
+  });
 }

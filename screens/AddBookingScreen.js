@@ -13,6 +13,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 
 import BackButton from '../components/BackButton';
 import PrimaryButton from '../components/PrimaryButton';
+import SearchField from '../components/SearchField';
 import { getDeterministicSchedulingRecommendations } from '../constants/aiScheduling';
 import {
   formatDateValue,
@@ -23,8 +24,11 @@ import { COLORS } from '../constants/colors';
 import { ROUTES } from '../constants/routes';
 import { useAuth } from '../context/AuthContext';
 import { useBookings } from '../context/BookingsContext';
+import { useClients } from '../context/ClientsContext';
 import { useServices } from '../context/ServicesContext';
 import { useStaff } from '../context/StaffContext';
+import { filterClients } from '../utils/clients';
+import { getClientDisplayName } from '../utils/clientProfiles';
 
 function Field({
   label,
@@ -140,6 +144,7 @@ export default function AddBookingScreen({ navigation, route }) {
     fetchServices,
   } = useServices();
   const { staff, staffAvailability } = useStaff();
+  const { clients, fetchClients, isClientsLoading } = useClients();
   const bookingId = route?.params?.bookingId;
   const prefilledClientName = route?.params?.clientName;
   const prefilledClientId = route?.params?.clientId;
@@ -158,6 +163,10 @@ export default function AddBookingScreen({ navigation, route }) {
   );
 
   const [clientName, setClientName] = useState('');
+  const [customerPhone, setCustomerPhone] = useState('');
+  const [customerEmail, setCustomerEmail] = useState('');
+  const [selectedClientId, setSelectedClientId] = useState('');
+  const [clientSearchQuery, setClientSearchQuery] = useState('');
   const [selectedServiceId, setSelectedServiceId] = useState('');
   const [selectedStaffId, setSelectedStaffId] = useState('');
   const [price, setPrice] = useState('');
@@ -173,6 +182,59 @@ export default function AddBookingScreen({ navigation, route }) {
 
   const openDatePicker = () => {
     setShowDatePicker(true);
+  };
+
+  useEffect(() => {
+    if (!clients.length && !isClientsLoading) {
+      fetchClients();
+    }
+  }, [clients.length, fetchClients, isClientsLoading]);
+
+  const selectedClient = useMemo(
+    () => clients.find((client) => client.id === selectedClientId) || null,
+    [clients, selectedClientId]
+  );
+
+  const clientSearchResults = useMemo(() => {
+    if (!clientSearchQuery.trim()) {
+      return [];
+    }
+
+    return filterClients(clients, clientSearchQuery).slice(0, 6);
+  }, [clientSearchQuery, clients]);
+
+  const onSelectClient = (client) => {
+    setSelectedClientId(client.id);
+    setClientName(getClientDisplayName(client));
+    setCustomerPhone(String(client.phone || '').trim());
+    setCustomerEmail(String(client.email || '').trim());
+    setClientSearchQuery('');
+  };
+
+  const clearSelectedClient = () => {
+    setSelectedClientId('');
+    setClientSearchQuery('');
+  };
+
+  const onClientNameChange = (value) => {
+    setClientName(value);
+    if (selectedClientId) {
+      setSelectedClientId('');
+    }
+  };
+
+  const onCustomerPhoneChange = (value) => {
+    setCustomerPhone(value);
+    if (selectedClientId) {
+      setSelectedClientId('');
+    }
+  };
+
+  const onCustomerEmailChange = (value) => {
+    setCustomerEmail(value);
+    if (selectedClientId) {
+      setSelectedClientId('');
+    }
   };
 
   useEffect(() => {
@@ -241,6 +303,9 @@ export default function AddBookingScreen({ navigation, route }) {
     }
 
     setClientName(bookingToEdit.client_name || '');
+    setCustomerPhone(bookingToEdit.customer_phone || '');
+    setCustomerEmail(bookingToEdit.customer_email || '');
+    setSelectedClientId(bookingToEdit.client_id || '');
     const metadata = bookingToEdit.booking_metadata || {};
     const existingService =
       activeServices.find((item) => item.id === metadata.service_id)
@@ -273,12 +338,28 @@ export default function AddBookingScreen({ navigation, route }) {
   }, [activeServices, bookingToEdit]);
 
   useEffect(() => {
-    if (bookingToEdit || !prefilledClientName) {
+    if (bookingToEdit || !prefilledClientId || !clients.length) {
+      return;
+    }
+
+    const client = clients.find((item) => item.id === prefilledClientId);
+    if (!client) {
+      return;
+    }
+
+    setSelectedClientId(client.id);
+    setClientName(getClientDisplayName(client));
+    setCustomerPhone(String(client.phone || '').trim());
+    setCustomerEmail(String(client.email || '').trim());
+  }, [bookingToEdit, clients, prefilledClientId]);
+
+  useEffect(() => {
+    if (bookingToEdit || prefilledClientId || !prefilledClientName) {
       return;
     }
 
     setClientName(prefilledClientName);
-  }, [bookingToEdit, prefilledClientName]);
+  }, [bookingToEdit, prefilledClientId, prefilledClientName]);
 
   useEffect(() => {
     if (!slotsResult.slots.length) {
@@ -370,7 +451,9 @@ export default function AddBookingScreen({ navigation, route }) {
 
     const payload = {
       client_name: clientName.trim(),
-      client_id: prefilledClientId || bookingToEdit?.client_id || null,
+      client_id: selectedClientId || bookingToEdit?.client_id || null,
+      customer_phone: customerPhone.trim(),
+      customer_email: customerEmail.trim(),
       service: selectedService.name,
       date: normalizedDate,
       time: normalizedTime,
@@ -475,6 +558,7 @@ export default function AddBookingScreen({ navigation, route }) {
             paddingBottom: 36,
           }}
           showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
         >
           <Text
             style={{
@@ -509,11 +593,114 @@ export default function AddBookingScreen({ navigation, route }) {
             </Text>
           ) : null}
 
+          <View style={{ marginBottom: 14 }}>
+            <Text
+              style={{
+                color: COLORS.textSecondary,
+                marginBottom: 8,
+                fontSize: 13,
+                letterSpacing: 0.3,
+              }}
+            >
+              Client
+            </Text>
+
+            <SearchField
+              value={clientSearchQuery}
+              onChangeText={setClientSearchQuery}
+              placeholder="Search existing clients"
+            />
+
+            {selectedClient ? (
+              <View
+                style={{
+                  marginTop: 10,
+                  backgroundColor: '#231B3A',
+                  borderColor: COLORS.accent,
+                  borderWidth: 1,
+                  borderRadius: 12,
+                  paddingHorizontal: 12,
+                  paddingVertical: 10,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                }}
+              >
+                <View style={{ flex: 1, paddingRight: 10 }}>
+                  <Text style={{ color: COLORS.textPrimary, fontWeight: '700' }}>
+                    {getClientDisplayName(selectedClient)}
+                  </Text>
+                  {selectedClient.phone || selectedClient.email ? (
+                    <Text style={{ color: COLORS.textSecondary, marginTop: 4, fontSize: 12 }}>
+                      {[selectedClient.phone, selectedClient.email].filter(Boolean).join(' • ')}
+                    </Text>
+                  ) : null}
+                </View>
+                <TouchableOpacity onPress={clearSelectedClient}>
+                  <Text style={{ color: '#C4B5FD', fontWeight: '700', fontSize: 12 }}>
+                    Clear
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            ) : null}
+
+            {clientSearchResults.length ? (
+              <View
+                style={{
+                  marginTop: 8,
+                  backgroundColor: COLORS.card,
+                  borderRadius: 12,
+                  borderWidth: 1,
+                  borderColor: '#27272A',
+                  overflow: 'hidden',
+                }}
+              >
+                {clientSearchResults.map((client) => (
+                  <TouchableOpacity
+                    key={client.id}
+                    onPress={() => onSelectClient(client)}
+                    style={{
+                      paddingHorizontal: 12,
+                      paddingVertical: 12,
+                      borderBottomWidth: 1,
+                      borderBottomColor: '#27272A',
+                    }}
+                  >
+                    <Text style={{ color: COLORS.textPrimary, fontWeight: '600' }}>
+                      {getClientDisplayName(client)}
+                    </Text>
+                    {client.phone || client.email ? (
+                      <Text style={{ color: COLORS.textSecondary, marginTop: 4, fontSize: 12 }}>
+                        {[client.phone, client.email].filter(Boolean).join(' • ')}
+                      </Text>
+                    ) : null}
+                  </TouchableOpacity>
+                ))}
+              </View>
+            ) : null}
+          </View>
+
           <Field
             label="Client name"
             value={clientName}
-            onChangeText={setClientName}
+            onChangeText={onClientNameChange}
             placeholder="Enter client name"
+          />
+
+          <Field
+            label="Phone"
+            value={customerPhone}
+            onChangeText={onCustomerPhoneChange}
+            placeholder="Phone number"
+            keyboardType="phone-pad"
+          />
+
+          <Field
+            label="Email"
+            value={customerEmail}
+            onChangeText={onCustomerEmailChange}
+            placeholder="you@example.com"
+            keyboardType="email-address"
           />
 
           <View style={{ marginBottom: 14 }}>
