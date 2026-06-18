@@ -260,6 +260,45 @@ export async function exchangeAuthorizationCode({
   return data;
 }
 
+export async function refreshGoogleAccessToken(refreshToken: string): Promise<GoogleTokenResponse> {
+  const body = new URLSearchParams({
+    client_id: getGoogleOAuthClientId(),
+    client_secret: getGoogleOAuthClientSecret(),
+    refresh_token: refreshToken,
+    grant_type: 'refresh_token',
+  });
+
+  const response = await fetch(GOOGLE_TOKEN_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body,
+  });
+
+  const data = (await response.json().catch(() => ({}))) as GoogleTokenResponse;
+
+  logGoogleOAuthStep('token_refresh_response', {
+    ok: response.ok,
+    status: response.status,
+    has_access_token: Boolean(data.access_token),
+    error: data.error || null,
+    error_description: data.error_description || null,
+  });
+
+  if (!response.ok) {
+    throw new Error(
+      data.error_description || data.error || 'Failed to refresh Google access token.'
+    );
+  }
+
+  if (!data.access_token) {
+    throw new Error('Google token refresh did not return an access token.');
+  }
+
+  return data;
+}
+
 export async function revokeGoogleToken(token: string): Promise<void> {
   const response = await fetch(`${GOOGLE_REVOKE_URL}?token=${encodeURIComponent(token)}`, {
     method: 'POST',
