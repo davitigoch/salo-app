@@ -126,7 +126,7 @@ function isIgnorableRootLinkingUrl(url) {
 
 const Stack = createNativeStackNavigator();
 const BOOKING_SELECT_COLUMNS =
-  'id, client_id, client_name, service, date, time, status, price, notes, staff_member_id, booking_metadata, user_id, created_at, customer_email, customer_phone, booking_source, booking_token';
+  'id, client_id, client_name, service, date, time, status, price, notes, staff_member_id, booking_metadata, user_id, business_id, business_slug, created_at, customer_email, customer_phone, booking_source, booking_token';
 const BUSINESS_SELECT_COLUMNS = 'id, owner_user_id, business_name, slug, description, timezone, services, public_booking_enabled, onboarding_completed, deposits_enabled, deposit_percentage, require_card_on_booking, stripe_account_id, stripe_charges_enabled, stripe_payouts_enabled, stripe_card_payments_enabled, stripe_transfers_enabled, created_at';
 const BUSINESS_BOOTSTRAP_TIMEOUT_MS = 15000;
 
@@ -1112,9 +1112,13 @@ export default function AppNavigator() {
     session?.user?.id,
   ]);
 
-  const addBooking = async (bookingInput) => {
+  const addBooking = useCallback(async (bookingInput) => {
     if (!session?.user?.id) {
       return { error: { message: 'User is not authenticated.' } };
+    }
+
+    if (!business?.id) {
+      return { error: { message: 'Business profile is not ready. Please try again.' } };
     }
 
     setBookingsError('');
@@ -1122,6 +1126,10 @@ export default function AppNavigator() {
     const payload = {
       ...bookingInput,
       user_id: session.user.id,
+      business_id: bookingInput.business_id || business.id,
+      business_slug: bookingInput.business_slug || business.slug || null,
+      booking_source: bookingInput.booking_source || 'owner',
+      staff_member_id: bookingInput.staff_member_id ?? null,
     };
 
     const { data, error } = await supabase
@@ -1137,7 +1145,7 @@ export default function AppNavigator() {
 
     setBookings((previousBookings) => [data, ...previousBookings]);
     return { error: null, data };
-  };
+  }, [business?.id, business?.slug, session?.user?.id]);
 
   const updateBooking = async (bookingId, bookingInput) => {
     if (!session?.user?.id) {
@@ -1642,7 +1650,7 @@ export default function AppNavigator() {
       deleteBooking,
       logAiRecommendation,
     }),
-    [bookings, isBookingsLoading, bookingsError, fetchBookings, logAiRecommendation]
+    [bookings, isBookingsLoading, bookingsError, fetchBookings, addBooking, logAiRecommendation]
   );
 
   const clientsValue = useMemo(

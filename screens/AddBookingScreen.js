@@ -132,7 +132,7 @@ function PickerField({ label, value, onPress }) {
 
 export default function AddBookingScreen({ navigation, route }) {
   const { bookings, addBooking, updateBooking, logAiRecommendation } = useBookings();
-  const { businessHours } = useAuth();
+  const { businessHours, business } = useAuth();
   const {
     services,
     isServicesLoading,
@@ -354,6 +354,11 @@ export default function AddBookingScreen({ navigation, route }) {
       return;
     }
 
+    if (!business?.id) {
+      Alert.alert('Business unavailable', 'Your salon profile is still loading. Please try again.');
+      return;
+    }
+
     const parsedPrice = Number(String(price).replace(',', '.'));
     if (!price.trim() || Number.isNaN(parsedPrice) || parsedPrice < 0) {
       Alert.alert('Invalid price', 'Please enter a valid non-negative price.');
@@ -371,6 +376,9 @@ export default function AddBookingScreen({ navigation, route }) {
       time: normalizedTime,
       price: parsedPrice,
       notes: notes.trim(),
+      business_id: business.id,
+      business_slug: business.slug || null,
+      booking_source: 'owner',
       staff_member_id: selectedStaff?.id || null,
       booking_metadata: {
         service_id: selectedService.id,

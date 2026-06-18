@@ -1,3 +1,5 @@
+create extension if not exists pgcrypto with schema extensions;
+
 alter table public.bookings
 add column if not exists booking_token text;
 
@@ -11,7 +13,7 @@ declare
   generated text;
 begin
   loop
-    generated := lower(encode(gen_random_bytes(18), 'hex'));
+    generated := lower(encode(extensions.gen_random_bytes(18), 'hex'));
     exit when not exists (
       select 1
       from public.bookings b
@@ -107,8 +109,8 @@ returns table (
   service text,
   service_duration_minutes integer,
   price numeric,
-  date text,
-  time text,
+  "date" text,
+  "time" text,
   status text,
   payment_status text,
   staff_member_id uuid,
@@ -401,8 +403,8 @@ returns table (
   success boolean,
   message text,
   booking_token text,
-  date text,
-  time text,
+  "date" text,
+  "time" text,
   status text
 )
 language plpgsql
