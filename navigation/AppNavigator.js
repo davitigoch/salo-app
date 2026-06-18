@@ -60,6 +60,7 @@ import DailyScheduleScreen from '../screens/DailyScheduleScreen';
 import OnboardingWizardScreen from '../screens/OnboardingWizardScreen';
 import PaymentSettingsScreen from '../screens/PaymentSettingsScreen';
 import NotificationSettingsScreen from '../screens/NotificationSettingsScreen';
+import CalendarSettingsScreen from '../screens/CalendarSettingsScreen';
 import AnalyticsScreen from '../screens/AnalyticsScreen';
 import PublicBookingScreen from '../screens/PublicBookingScreen';
 import ClientAppointmentPortalScreen from '../screens/ClientAppointmentPortalScreen';
@@ -87,6 +88,7 @@ const LINKING_SCREEN_CONFIG = {
   DailySchedule: 'calendar/day',
   PaymentSettings: 'settings/payment',
   NotificationSettings: 'settings/notifications',
+  CalendarSettings: 'settings/calendar',
   Analytics: 'analytics',
 };
 
@@ -1827,6 +1829,10 @@ export default function AppNavigator() {
                       <Stack.Screen
                         name={ROUTES.NotificationSettings}
                         component={NotificationSettingsScreen}
+                      />
+                      <Stack.Screen
+                        name={ROUTES.CalendarSettings}
+                        component={CalendarSettingsScreen}
                       />
                       <Stack.Screen
                         name={ROUTES.Analytics}

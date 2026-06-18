@@ -6,7 +6,36 @@ const GOOGLE_CALENDAR_LIST_URL = 'https://www.googleapis.com/calendar/v3/users/m
 const GOOGLE_CALENDAR_INSERT_URL = 'https://www.googleapis.com/calendar/v3/calendars';
 
 export const GOOGLE_CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar';
+export const GOOGLE_USERINFO_EMAIL_SCOPE = 'https://www.googleapis.com/auth/userinfo.email';
+
+export function getGoogleOAuthScopeString(): string {
+  return [GOOGLE_CALENDAR_SCOPE, GOOGLE_USERINFO_EMAIL_SCOPE].join(' ');
+}
+
+export const GOOGLE_OAUTH_SCOPES = getGoogleOAuthScopeString();
+
+export function tokenIncludesGoogleCalendarScope(scopeValue: string | null | undefined): boolean {
+  const scopes = String(scopeValue || '')
+    .split(/\s+/)
+    .map((scope) => scope.trim())
+    .filter(Boolean);
+
+  return scopes.includes(GOOGLE_CALENDAR_SCOPE);
+}
 export const SALO_BOOKINGS_CALENDAR_SUMMARY = 'SALO Bookings';
+
+function logGoogleOAuthStep(step: string, details: Record<string, unknown> = {}) {
+  console.log('[SALO GCal OAuth]', step, JSON.stringify(details));
+}
+
+function summarizeGoogleApiError(data: unknown): string {
+  if (!data || typeof data !== 'object') {
+    return 'Unknown Google API error.';
+  }
+
+  const record = data as { error?: { message?: string; status?: string }; message?: string };
+  return record.error?.message || record.message || JSON.stringify(data).slice(0, 500);
+}
 
 export type OAuthStatePayload = {
   businessId: string;
@@ -156,16 +185,20 @@ export function buildGoogleOAuthUrl({
   redirectUri: string;
   state: string;
 }): string {
-  const params = new URLSearchParams({
-    client_id: clientId,
-    redirect_uri: redirectUri,
-    response_type: 'code',
-    scope: GOOGLE_CALENDAR_SCOPE,
-    access_type: 'offline',
-    prompt: 'consent',
-    include_granted_scopes: 'true',
-    state,
-  });
+  const scope = getGoogleOAuthScopeString();
+
+  if (!scope.includes(GOOGLE_CALENDAR_SCOPE)) {
+    throw new Error('OAuth scope misconfiguration: calendar scope missing.');
+  }
+
+  const params = new URLSearchParams();
+  params.set('client_id', clientId);
+  params.set('redirect_uri', redirectUri);
+  params.set('response_type', 'code');
+  params.set('scope', scope);
+  params.set('access_type', 'offline');
+  params.set('prompt', 'consent');
+  params.set('state', state);
 
   return `${GOOGLE_AUTH_BASE}?${params.toString()}`;
 }
@@ -209,6 +242,17 @@ export async function exchangeAuthorizationCode({
 
   const data = (await response.json().catch(() => ({}))) as GoogleTokenResponse;
 
+  logGoogleOAuthStep('token_exchange_response', {
+    ok: response.ok,
+    status: response.status,
+    has_access_token: Boolean(data.access_token),
+    has_refresh_token: Boolean(data.refresh_token),
+    token_type: data.token_type || null,
+    scope: data.scope || null,
+    error: data.error || null,
+    error_description: data.error_description || null,
+  });
+
   if (!response.ok) {
     throw new Error(data.error_description || data.error || 'Failed to exchange Google authorization code.');
   }
@@ -231,6 +275,11 @@ export async function revokeGoogleToken(token: string): Promise<void> {
 }
 
 export async function fetchGoogleAccountEmail(accessToken: string): Promise<string> {
+  logGoogleOAuthStep('userinfo_request', {
+    has_access_token: Boolean(accessToken),
+    access_token_length: accessToken.length,
+  });
+
   const response = await fetch(GOOGLE_USERINFO_URL, {
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -239,14 +288,28 @@ export async function fetchGoogleAccountEmail(accessToken: string): Promise<stri
 
   const data = await response.json().catch(() => ({}));
 
+  logGoogleOAuthStep('userinfo_response', {
+    ok: response.ok,
+    status: response.status,
+    has_email: Boolean((data as { email?: string })?.email),
+    error_message: summarizeGoogleApiError(data),
+  });
+
   if (!response.ok) {
-    throw new Error(data?.error?.message || 'Failed to load Google account profile.');
+    throw new Error(
+      `[userinfo] ${summarizeGoogleApiError(data) || 'Failed to load Google account profile.'}`
+    );
   }
 
-  return String(data?.email || '').trim();
+  return String((data as { email?: string })?.email || '').trim();
 }
 
 async function findExistingSaloCalendarId(accessToken: string): Promise<string | null> {
+  logGoogleOAuthStep('calendar_list_request', {
+    has_access_token: Boolean(accessToken),
+    access_token_length: accessToken.length,
+  });
+
   const response = await fetch(GOOGLE_CALENDAR_LIST_URL, {
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -255,12 +318,25 @@ async function findExistingSaloCalendarId(accessToken: string): Promise<string |
 
   const data = await response.json().catch(() => ({}));
 
+  logGoogleOAuthStep('calendar_list_response', {
+    ok: response.ok,
+    status: response.status,
+    item_count: Array.isArray((data as { items?: unknown[] })?.items)
+      ? (data as { items: unknown[] }).items.length
+      : 0,
+    error_message: summarizeGoogleApiError(data),
+  });
+
   if (!response.ok) {
-    throw new Error(data?.error?.message || 'Failed to list Google calendars.');
+    throw new Error(
+      `[calendarList] ${summarizeGoogleApiError(data) || 'Failed to list Google calendars.'}`
+    );
   }
 
-  const items = Array.isArray(data?.items) ? data.items : [];
-  const match = items.find((item: { summary?: string; id?: string }) =>
+  const items = Array.isArray((data as { items?: unknown[] })?.items)
+    ? (data as { items: Array<{ summary?: string; id?: string }> }).items
+    : [];
+  const match = items.find((item) =>
     String(item?.summary || '').trim() === SALO_BOOKINGS_CALENDAR_SUMMARY
   );
 
@@ -268,6 +344,12 @@ async function findExistingSaloCalendarId(accessToken: string): Promise<string |
 }
 
 async function createSaloBookingsCalendar(accessToken: string): Promise<string> {
+  logGoogleOAuthStep('calendars_insert_request', {
+    has_access_token: Boolean(accessToken),
+    access_token_length: accessToken.length,
+    summary: SALO_BOOKINGS_CALENDAR_SUMMARY,
+  });
+
   const response = await fetch(GOOGLE_CALENDAR_INSERT_URL, {
     method: 'POST',
     headers: {
@@ -283,15 +365,24 @@ async function createSaloBookingsCalendar(accessToken: string): Promise<string> 
 
   const data = await response.json().catch(() => ({}));
 
+  logGoogleOAuthStep('calendars_insert_response', {
+    ok: response.ok,
+    status: response.status,
+    has_calendar_id: Boolean((data as { id?: string })?.id),
+    error_message: summarizeGoogleApiError(data),
+  });
+
   if (!response.ok) {
-    throw new Error(data?.error?.message || 'Failed to create SALO Bookings calendar.');
+    throw new Error(
+      `[calendars.insert] ${summarizeGoogleApiError(data) || 'Failed to create SALO Bookings calendar.'}`
+    );
   }
 
-  if (!data?.id) {
+  if (!(data as { id?: string })?.id) {
     throw new Error('Google did not return a calendar id.');
   }
 
-  return String(data.id);
+  return String((data as { id: string }).id);
 }
 
 export async function ensureSaloBookingsCalendarId(accessToken: string): Promise<string> {

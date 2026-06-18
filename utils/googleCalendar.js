@@ -30,6 +30,7 @@ export function getGoogleCalendarSyncLabel(status) {
   return '—';
 }
 
+export function formatGoogleCalendarTimestamp(value) {
   if (!value) {
     return '—';
   }

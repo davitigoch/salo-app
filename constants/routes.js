@@ -20,6 +20,7 @@ export const ROUTES = {
   DailySchedule: 'DailySchedule',
   PaymentSettings: 'PaymentSettings',
   NotificationSettings: 'NotificationSettings',
+  CalendarSettings: 'CalendarSettings',
   Analytics: 'Analytics',
   PublicBooking: 'PublicBooking',
   AppointmentPortal: 'AppointmentPortal',

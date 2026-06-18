@@ -36,6 +36,11 @@ const SETTINGS = [
     description: 'Deposits and card requirements.',
     route: ROUTES.PaymentSettings,
   },
+  {
+    title: 'Google Calendar',
+    description: 'Connect Google Calendar for confirmed booking sync.',
+    route: ROUTES.CalendarSettings,
+  },
 ];
 
 export default function SettingsScreen({ navigation }) {
