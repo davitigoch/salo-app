@@ -1,146 +1,151 @@
 # SALO Product Roadmap
 
-SALO is a platform for **appointment-based service businesses** — salons, barbers, nail studios, spas, med spas, dentists, wellness clinics, therapists, coaches, tutors, fitness professionals, and similar operators.
+SALO is a **modular operating system for appointment-based businesses** — barbers, salons, spas, dental and medical practices, wellness clinics, fitness studios, coaches, consultants, and similar operators.
 
-Terminology is industry-neutral: **Client**, **Appointment**, **Service**, **Staff member**, **Business**.
+**Platform architecture:** [salo-platform-architecture.md](./salo-platform-architecture.md) — industry templates, business modules, access roles, onboarding, and future pricing.
+
+**Core language (industry-neutral):** **Client**, **Appointment**, **Service**, **Staff member**, **Business**.
+
+---
+
+## Product direction (2026)
+
+SALO is evolving beyond a salon booking app into a configurable platform:
+
+| Concept | Summary |
+|---------|---------|
+| **Industry templates** | Barber, Beauty Salon, Spa, Dental, Medical, Wellness, Fitness, Coaching, Other — configure defaults only; **never restrict features** |
+| **Modules** | Businesses enable capabilities (Staff, Reception Desk, SMS, Loyalty, Memberships, Marketing, Analytics, AI Assistant, AI Receptionist, …) |
+| **Roles** | Owner, Manager, Receptionist, Staff — always supported; businesses may use none, some, or all |
+| **Pricing (future)** | Starter → Growth → Pro → Enterprise, with module-based add-ons |
+
+**Next platform work (before Staff Roles implementation):** industry templates + module registry (see architecture doc §9).
 
 ---
 
 ## Completed
 
+### Platform core ✅
+
+- Business onboarding wizard (profile, services, team, hours, payments, public booking)
+- Owner booking management (calendar, daily schedule, client contact capture)
+- Services, staff, availability
+- Public booking page + owner confirm workflow
+- Stripe Connect deposits
+- Google Calendar one-way sync (SALO → Google)
+- Analytics dashboard (baseline)
+- Owner push notifications (device alerts)
+
 ### PR3 — Client Profiles (MVP) ✅
 
 Business-scoped client identity, profile metrics, relationship fields, and segmented appointment history.
 
-- Database foundation (`clients` evolution, tags schema, `client_profile_stats`, RPCs)
-- App data layer (`list_client_profiles`, `get_client_profile`)
-- Client profile screen (metrics, relationship, contact, notes, upcoming/past appointments)
-- Scroll-stable layout; pull-to-refresh on user action only
-
 **Design doc:** [pr3-client-profiles-design.md](./pr3-client-profiles-design.md)
 
-**Deferred post-MVP:** Phase 3.4 tags UI, preferred staff picker.
+**Deferred:** Phase 3.4 tags UI, preferred staff picker.
 
-### Google Calendar integration (MVP) ✅
+### PR4 — Notification Center ✅
 
-Verified end-to-end (June 2026).
-
-- Google OAuth connection per business
-- Dedicated **SALO Bookings** calendar (create or reuse)
-- Background sync worker (`process-calendar-sync-jobs`)
-- Confirmed booking → Google event create
-- Reschedule → Google event update
-- Cancel / hard delete → Google event removal
-- Connection status screen (no raw calendar ID exposed)
-- Sync monitoring fields on `bookings` and `google_calendar_connections`
-- One-way sync: SALO → Google only
-
-### Public Booking (MVP) ✅
-
-- Public booking page per business
-- Service / staff / slot selection
-- Client contact capture
-- Booking request → owner workflow
-
-### Stripe Deposits ✅
-
-- Stripe Connect onboarding
-- Deposit collection on public bookings
-- Payment status on bookings
-- Owner payment settings screen
-
-### Core platform (prior releases) ✅
-
-- Business onboarding, services, staff, availability
-- Owner booking management (calendar, daily schedule)
-- SMS notifications + owner push notifications (device alerts)
-- Client appointment portal (reschedule / cancel)
-- Analytics dashboard (baseline)
-- Basic `clients` table + list/detail screens (superseded by PR3)
-
----
-
-## In progress / next
-
-### PR4 — Notification Center 🎯 **Next priority**
-
-Centralized in-app notification center for business owners — a durable feed beyond ephemeral push alerts.
+Centralized in-app notification feed for business owners.
 
 **Design doc:** [pr4-notification-center-design.md](./pr4-notification-center-design.md)
 
-**Event types (MVP):**
-
-| Type | Trigger |
-|------|---------|
-| Booking created | Owner or staff creates a booking |
-| Booking confirmed | Status → confirmed |
-| Booking cancelled | Status → cancelled |
-| Booking rescheduled | Date/time or staff change |
-| Public booking request | New request from public booking flow |
-| Payment received | Stripe deposit or payment succeeded |
-| Google Calendar sync failure | `process-calendar-sync-jobs` permanent failure |
-| SMS / email delivery failure | Outbound notification job failed |
-
-**Database:** `notification_events`, `notification_reads`
-
-**App features:**
-
-- Unread badge on app navigation
-- Mark as read / mark all as read
-- Notification detail screen (deep link to booking, client, or settings)
-- Realtime updates via Supabase Realtime
-
-**Phases:**
-
 | Phase | Scope | Status |
 |-------|-------|--------|
-| 4.1 | Database + RLS (`notification_events`, `notification_reads`, indexes, RPCs) | Implemented (`20260702_notification_center_foundation.sql`) |
-| 4.2 | Notification service (emit events from booking, payment, calendar, messaging pipelines) | Implemented (`20260703_notification_center_emission.sql`) |
-| 4.3 | Realtime delivery (business-scoped channel, unread count RPC) | Implemented (`20260704_notification_center_realtime.sql`, `NotificationsContext`) |
-| 4.4 | UI screens (inbox, detail, badge, read actions) | Implemented (`NotificationsScreen`, `NotificationDetailScreen`) |
+| 4.1 | Database + RLS | ✅ |
+| 4.2 | Event emission (booking, payment, calendar, SMS failure) | ✅ |
+| 4.3 | Realtime + unread badge | ✅ |
+| 4.4 | Inbox UI, detail, read actions | ✅ |
+
+### SMS Reminders — Foundation ✅
+
+Client SMS for appointment updates and reminders (mock provider default).
+
+**Design doc:** [sms-reminders-foundation.md](./sms-reminders-foundation.md)
+
+| Component | Status |
+|-----------|--------|
+| `sms_notifications` queue + booking triggers | ✅ |
+| `send-sms-notifications` worker (mock / Twilio) | ✅ |
+| Failure → Notification Center | ✅ |
+
+**Deferred:** Cron scheduler, Twilio webhooks, owner reminder settings UI.
 
 ---
 
 ## In progress / next
 
-### SMS Reminders — Foundation 🎯
+### P1 — Industry templates 🎯
 
-Client SMS for appointment updates and reminders with **mock provider** (no Twilio required for dev).
+- `industry_template` on business + template catalog (9 options)
+- Template-driven defaults: display labels, sample services, module recommendations
+- Onboarding step: "What type of business are you?"
+- **Rule:** templates configure defaults only; no feature restrictions
 
-**Design doc:** [sms-reminders-foundation.md](./sms-reminders-foundation.md)
+### P2 — Business modules registry
 
-**Status:** Foundation implemented (`20260705_sms_reminders_foundation.sql`, `send-sms-notifications`).
+- `business_modules` enablement per tenant
+- Navigation and settings gated by `isModuleEnabled`
+- Settings → Modules discovery UI
+- Backfill: enable all currently-shipped modules for existing businesses
 
-| Component | Status |
-|-----------|--------|
-| `sms_notifications` queue table | Implemented |
-| Booking enqueue (confirmed / rescheduled / cancelled) | Implemented |
-| 24h / 2h reminder scheduling | Implemented |
-| `send-sms-notifications` worker (mock default) | Implemented |
-| Failure → Notification Center | Implemented |
+### P3 — Staff Roles (access control)
 
-**Deferred:** Cron scheduler, Twilio delivery webhooks, owner reminder settings UI.
+**Blocked on:** P1–P2 architecture review (design in [salo-platform-architecture.md](./salo-platform-architecture.md) §5).
+
+- `business_members` (Owner, Manager, Receptionist, Staff)
+- Invite / accept flow
+- Permission matrix + RLS migration off `owner_user_id`-only policies
+- Role-aware app navigation
+
+### P4 — Onboarding v2
+
+- Template-aware and module-aware wizard
+- Solo operator fast path ("I work alone")
+- Optional team invite step
+
+### P5 — Subscription schema (pre-billing)
+
+- `business_subscriptions` + `business_module_entitlements`
+- Implicit Growth plan for existing customers until Stripe Billing ships
 
 ---
 
-## Planned (after PR4)
+## Planned modules & features
 
-| Area | Summary |
-|------|---------|
-| PR3.4 — Tags & preferred staff | Tag management UI; preferred staff picker on client profile |
-| Marketing & campaigns | Segments from tags + stats; email/SMS campaign hooks |
-| Rebooking reminders | Rules engine on `last_visit` / `next_appointment` |
-| Loyalty programs | Points / visit tiers (schema stubs in PR3) |
-| AI assistant | Client context bundle RPC for scheduling + outreach |
-| Google Calendar v2 | Staff calendars, busy import, multi-calendar |
-| Brands / locations | Multi-location businesses under one owner account |
+| Module / area | Summary | Architecture `module_key` |
+|---------------|---------|---------------------------|
+| Reception desk | Front-desk day view, quick book, check-in | `reception_desk` |
+| PR3.4 — Tags & preferred staff | Tag UI; preferred staff on client profile | `client_profiles` |
+| Loyalty | Points / visit tiers | `loyalty` |
+| Memberships | Recurring plans, credits | `memberships` |
+| Marketing | Segments, campaigns (email/SMS hooks) | `marketing` |
+| Rebooking reminders | Rules on `last_visit` / `next_appointment` | `sms_reminders` |
+| AI assistant | Scheduling + outreach with client context | `ai_assistant` |
+| AI receptionist | Automated booking + messaging | `ai_receptionist` |
+| Google Calendar v2 | Staff calendars, busy import | `calendar_sync` |
+| Brands / locations | Multi-location under one account | Enterprise |
+
+---
+
+## Future pricing (architecture only)
+
+| Plan | Typical customer |
+|------|------------------|
+| **Starter** | Solo operator |
+| **Growth** | Small team + SMS + notifications |
+| **Pro** | Payments, marketing, loyalty |
+| **Enterprise** | Multi-location, AI receptionist, compliance |
+
+Module add-ons (e.g. SMS volume packs) layer on any tier. See [salo-platform-architecture.md](./salo-platform-architecture.md) §7.
 
 ---
 
 ## Explicitly out of scope (current cycle)
 
 - Google → SALO calendar sync
-- Staff-level Google calendars
-- Beauty-industry-only terminology or workflows
+- Per-industry code forks or feature lock-out by template
+- HIPAA / industry compliance packs (Enterprise later)
 - Full marketing automation UI
-- Client-facing notification center (owner app only for PR4)
+- Client-facing notification center
+- Charging customers (schema first; Stripe Billing later)
