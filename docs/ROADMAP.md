@@ -48,7 +48,9 @@ Upgrade lightweight CRM into full **Client Profiles** with business-scoped data,
 
 **Status:** Phase 3.2 app data layer wired to client profile RPCs.
 
-**Status:** Phase 3.3 UI refresh (not started).
+**Status:** Phase 3.3 client profile screen upgrade complete.
+
+**Status:** Phase 3.4 tags and preferred staff UI (not started).
 
 ---
 

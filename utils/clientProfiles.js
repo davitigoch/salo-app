@@ -62,6 +62,24 @@ function formatProfileTimestamp(value) {
   return date;
 }
 
+export function formatClientSinceLabel(createdAt) {
+  if (!createdAt) {
+    return 'Client profile';
+  }
+
+  const date = new Date(createdAt);
+
+  if (Number.isNaN(date.getTime())) {
+    return 'Client profile';
+  }
+
+  return `Client since ${date.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  })}`;
+}
+
 export function normalizeClientProfileRow(row) {
   if (!row) {
     return null;

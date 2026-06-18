@@ -68,7 +68,7 @@ export default function ClientsScreen({ navigation }) {
           marginBottom: 16,
         }}
       >
-        Premium guest profiles
+        Client profiles
       </Text>
 
       <SearchField

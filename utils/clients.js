@@ -124,27 +124,29 @@ export function getClientTimelineEvents(client, bookings, now = new Date()) {
   const clientBookings = getClientBookingsForClient(client, bookings);
 
   return clientBookings
-    .map((booking) => {
-      const appointmentDate = parseBookingDateTime(booking);
-      const fallbackDate = booking.created_at ? new Date(booking.created_at) : null;
-      const sortDate = appointmentDate || fallbackDate;
-      const status = booking.status || 'confirmed';
-      const statusStyles = getStatusStyles(status);
-
-      return {
-        id: booking.id,
-        booking,
-        dateLabel: formatTimelineDate(booking),
-        timeLabel: formatBookingTime(booking),
-        priceLabel: formatBookingPrice(booking),
-        serviceLabel: booking.service || 'Appointment',
-        status,
-        statusLabel: getStatusLabel(status).toUpperCase(),
-        statusStyles,
-        sortTime: sortDate ? sortDate.getTime() : 0,
-      };
-    })
+    .map((booking) => buildBookingTimelineEvent(booking, now))
     .sort((first, second) => second.sortTime - first.sortTime);
+}
+
+export function buildBookingTimelineEvent(booking, now = new Date()) {
+  const appointmentDate = parseBookingDateTime(booking);
+  const fallbackDate = booking.created_at ? new Date(booking.created_at) : null;
+  const sortDate = appointmentDate || fallbackDate;
+  const status = booking.status || 'confirmed';
+  const statusStyles = getStatusStyles(status);
+
+  return {
+    id: booking.id,
+    booking,
+    dateLabel: formatTimelineDate(booking),
+    timeLabel: formatBookingTime(booking),
+    priceLabel: formatBookingPrice(booking),
+    serviceLabel: booking.service || 'Appointment',
+    status,
+    statusLabel: getStatusLabel(status).toUpperCase(),
+    statusStyles,
+    sortTime: sortDate ? sortDate.getTime() : 0,
+  };
 }
 
 export function findClientForBooking(booking, clients) {
@@ -279,6 +281,10 @@ export function getClientCrmStats(client, bookings, now = new Date()) {
     (booking) => (booking.status || 'confirmed') === 'no_show'
   ).length;
 
+  const cancellationCount = clientBookings.filter(
+    (booking) => (booking.status || 'confirmed') === 'cancelled'
+  ).length;
+
   const lifetimeRevenue = clientBookings
     .filter((booking) => REVENUE_STATUSES.has(booking.status || 'confirmed'))
     .reduce((sum, booking) => sum + Number(booking.price || 0), 0);
@@ -320,6 +326,8 @@ export function getClientCrmStats(client, bookings, now = new Date()) {
     lifetimeRevenue,
     averageTicket,
     noShows,
+    cancellationCount,
+    rescheduledCount: 0,
     lastVisit,
     lastVisitLabel: lastVisit ? formatShortBookingDate(lastVisit) : 'No visits yet',
     nextAppointment,
