@@ -44,6 +44,11 @@ import {
   fetchClientProfilesList,
   normalizeClientTableRow,
 } from '../utils/clientProfiles';
+import {
+  applyIndustryTemplate as applyIndustryTemplateRpc,
+  fetchIndustryTemplates as fetchIndustryTemplatesRpc,
+  normalizeBusinessIndustryFields,
+} from '../utils/industryTemplates';
 import { AuthProvider } from '../context/AuthContext';
 import { BookingsProvider } from '../context/BookingsContext';
 import { ClientsProvider } from '../context/ClientsContext';
@@ -141,7 +146,7 @@ function isIgnorableRootLinkingUrl(url) {
 const Stack = createNativeStackNavigator();
 const BOOKING_SELECT_COLUMNS =
   'id, client_id, client_name, service, date, time, status, price, notes, staff_member_id, booking_metadata, user_id, business_id, business_slug, created_at, customer_email, customer_phone, booking_source, booking_token';
-const BUSINESS_SELECT_COLUMNS = 'id, owner_user_id, business_name, slug, description, timezone, services, public_booking_enabled, onboarding_completed, deposits_enabled, deposit_percentage, require_card_on_booking, stripe_account_id, stripe_charges_enabled, stripe_payouts_enabled, stripe_card_payments_enabled, stripe_transfers_enabled, created_at';
+const BUSINESS_SELECT_COLUMNS = 'id, owner_user_id, business_name, slug, description, timezone, services, public_booking_enabled, onboarding_completed, deposits_enabled, deposit_percentage, require_card_on_booking, stripe_account_id, stripe_charges_enabled, stripe_payouts_enabled, stripe_card_payments_enabled, stripe_transfers_enabled, industry_template, template_version, template_applied_at, template_metadata, created_at';
 const BUSINESS_BOOTSTRAP_TIMEOUT_MS = 15000;
 
 function normalizeOnboardingStatus(businessRecord) {
@@ -174,6 +179,10 @@ function normalizeOnboardingStatus(businessRecord) {
   return normalized;
 }
 
+function normalizeBusinessRecord(businessRecord) {
+  return normalizeBusinessIndustryFields(normalizeOnboardingStatus(businessRecord));
+}
+
 export default function AppNavigator() {
   const [session, setSession] = useState(null);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
@@ -196,6 +205,9 @@ export default function AppNavigator() {
   const [staffAvailability, setStaffAvailability] = useState([]);
   const [isStaffAvailabilityLoading, setIsStaffAvailabilityLoading] = useState(false);
   const [staffAvailabilityError, setStaffAvailabilityError] = useState('');
+  const [industryTemplates, setIndustryTemplates] = useState([]);
+  const [isIndustryTemplatesLoading, setIsIndustryTemplatesLoading] = useState(false);
+  const [industryTemplatesError, setIndustryTemplatesError] = useState('');
   const [businessHours, setBusinessHours] = useState([]);
   const [isBusinessHoursLoading, setIsBusinessHoursLoading] = useState(false);
   const [businessHoursError, setBusinessHoursError] = useState('');
@@ -424,7 +436,7 @@ export default function AppNavigator() {
         businessId: normalizedBusiness?.id,
         onboardingCompleted: normalizedBusiness?.onboarding_completed,
       });
-      setBusiness(normalizedBusiness);
+      setBusiness(normalizeBusinessRecord(normalizedBusiness));
       setIsBusinessLoading(false);
       return { error: null };
     }
@@ -488,7 +500,7 @@ export default function AppNavigator() {
       businessId: normalizedCreatedBusiness?.id,
       onboardingCompleted: normalizedCreatedBusiness?.onboarding_completed,
     });
-    setBusiness(normalizedCreatedBusiness);
+    setBusiness(normalizeBusinessRecord(normalizedCreatedBusiness));
     setIsBusinessLoading(false);
     return { error: null };
   }, [session?.user?.email, session?.user?.id]);
@@ -498,6 +510,46 @@ export default function AppNavigator() {
     setBusinessBootstrapError('');
     await fetchOrCreateBusiness();
   }, [fetchOrCreateBusiness]);
+
+  const fetchIndustryTemplates = useCallback(async () => {
+    setIsIndustryTemplatesLoading(true);
+    setIndustryTemplatesError('');
+
+    const { data, error } = await fetchIndustryTemplatesRpc();
+
+    setIsIndustryTemplatesLoading(false);
+
+    if (error) {
+      setIndustryTemplatesError(error.message);
+      return { data: [], error };
+    }
+
+    setIndustryTemplates(data);
+    return { data, error: null };
+  }, []);
+
+  const applyIndustryTemplate = useCallback(async (templateKey) => {
+    if (!session?.user?.id) {
+      return { error: { message: 'User is not authenticated.' }, data: null };
+    }
+
+    const { data, error } = await applyIndustryTemplateRpc(templateKey);
+
+    if (error) {
+      return { data: null, error };
+    }
+
+    setBusiness(normalizeBusinessRecord(data));
+    return { data, error: null };
+  }, [session?.user?.id]);
+
+  useEffect(() => {
+    if (!session?.user?.id || !business?.id) {
+      return undefined;
+    }
+
+    fetchIndustryTemplates();
+  }, [business?.id, fetchIndustryTemplates, session?.user?.id]);
 
   useEffect(() => {
     if (!session?.user?.id || !isBusinessLoading) {
@@ -642,7 +694,7 @@ export default function AppNavigator() {
       return { error };
     }
 
-    setBusiness(normalizeOnboardingStatus(data));
+    setBusiness(normalizeBusinessRecord(data));
     return { error: null };
   };
 
@@ -666,7 +718,7 @@ export default function AppNavigator() {
       return { error };
     }
 
-    setBusiness(normalizeOnboardingStatus(data));
+    setBusiness(normalizeBusinessRecord(data));
     return { error: null };
   };
 
@@ -696,7 +748,7 @@ export default function AppNavigator() {
       return { error };
     }
 
-    setBusiness(normalizeOnboardingStatus(data));
+    setBusiness(normalizeBusinessRecord(data));
     return { error: null };
   };
 
@@ -720,7 +772,7 @@ export default function AppNavigator() {
       return { error };
     }
 
-    setBusiness(normalizeOnboardingStatus(data));
+    setBusiness(normalizeBusinessRecord(data));
     return { error: null };
   };
 
@@ -1715,6 +1767,11 @@ export default function AppNavigator() {
       saveBusinessProfile,
       updatePublicBookingEnabled,
       completeOnboarding,
+      industryTemplates,
+      isIndustryTemplatesLoading,
+      industryTemplatesError,
+      fetchIndustryTemplates,
+      applyIndustryTemplate,
       requestPasswordReset,
       updatePassword,
       clearPasswordRecovery,
@@ -1740,6 +1797,11 @@ export default function AppNavigator() {
       saveBusinessProfile,
       updatePublicBookingEnabled,
       completeOnboarding,
+      industryTemplates,
+      isIndustryTemplatesLoading,
+      industryTemplatesError,
+      fetchIndustryTemplates,
+      applyIndustryTemplate,
       requestPasswordReset,
       updatePassword,
       clearPasswordRecovery,
