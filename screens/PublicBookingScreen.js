@@ -187,7 +187,7 @@ export default function PublicBookingScreen({ route }) {
       const { data, error: businessError } = await supabase
         .from('businesses')
         .select(
-          'id, owner_user_id, business_name, slug, description, timezone, public_booking_enabled, stripe_account_id, stripe_charges_enabled, deposits_enabled, deposit_percentage, require_card_on_booking'
+          'id, owner_user_id, business_name, slug, description, timezone, public_booking_enabled, stripe_account_id, stripe_charges_enabled, stripe_card_payments_enabled, deposits_enabled, deposit_percentage, require_card_on_booking'
         )
         .eq('slug', slug)
         .eq('public_booking_enabled', true)

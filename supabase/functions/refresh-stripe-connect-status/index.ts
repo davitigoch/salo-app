@@ -8,11 +8,6 @@ const STRIPE_SECRET_KEY = Deno.env.get('STRIPE_SECRET_KEY') || '';
 
 const stripe = new Stripe(STRIPE_SECRET_KEY);
 
-const REQUESTED_CONNECT_CAPABILITIES = {
-  card_payments: { requested: true },
-  transfers: { requested: true },
-};
-
 function getStripeCapabilityFlags(account: Stripe.Account) {
   return {
     stripe_charges_enabled: account.charges_enabled,
@@ -20,26 +15,6 @@ function getStripeCapabilityFlags(account: Stripe.Account) {
     stripe_card_payments_enabled: account.capabilities?.card_payments === 'active',
     stripe_transfers_enabled: account.capabilities?.transfers === 'active',
   };
-}
-
-async function ensureConnectCapabilitiesRequested(stripeAccountId: string) {
-  let account = await stripe.accounts.retrieve(stripeAccountId);
-
-  const cardPaymentsStatus = account.capabilities?.card_payments;
-  const transfersStatus = account.capabilities?.transfers;
-
-  const shouldRequestCardPayments =
-    cardPaymentsStatus !== 'active' && cardPaymentsStatus !== 'pending';
-  const shouldRequestTransfers =
-    transfersStatus !== 'active' && transfersStatus !== 'pending';
-
-  if (shouldRequestCardPayments || shouldRequestTransfers) {
-    account = await stripe.accounts.update(stripeAccountId, {
-      capabilities: REQUESTED_CONNECT_CAPABILITIES,
-    });
-  }
-
-  return account;
 }
 
 Deno.serve(async (req) => {
@@ -81,11 +56,9 @@ Deno.serve(async (req) => {
 
   const body = await req.json().catch(() => ({}));
   const businessId = body?.businessId as string | undefined;
-  const refreshUrl = body?.refreshUrl as string | undefined;
-  const returnUrl = body?.returnUrl as string | undefined;
 
-  if (!businessId || !refreshUrl || !returnUrl) {
-    return new Response(JSON.stringify({ error: 'businessId, refreshUrl, and returnUrl are required.' }), {
+  if (!businessId) {
+    return new Response(JSON.stringify({ error: 'businessId is required.' }), {
       status: 400,
       headers: { 'Content-Type': 'application/json' },
     });
@@ -93,7 +66,7 @@ Deno.serve(async (req) => {
 
   const { data: business, error: businessError } = await adminClient
     .from('businesses')
-    .select('id, business_name, stripe_account_id')
+    .select('id, stripe_account_id')
     .eq('id', businessId)
     .eq('owner_user_id', user.id)
     .single();
@@ -105,53 +78,40 @@ Deno.serve(async (req) => {
     });
   }
 
+  if (!business.stripe_account_id) {
+    return new Response(JSON.stringify({ error: 'Business has not connected a Stripe account yet.' }), {
+      status: 409,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
   try {
-    let stripeAccountId = business.stripe_account_id as string | null;
-    let account: Stripe.Account;
-
-    if (!stripeAccountId) {
-      account = await stripe.accounts.create({
-        type: 'express',
-        capabilities: REQUESTED_CONNECT_CAPABILITIES,
-        business_profile: {
-          name: business.business_name,
-        },
-        metadata: {
-          business_id: business.id,
-        },
-      });
-
-      stripeAccountId = account.id;
-    } else {
-      account = await ensureConnectCapabilitiesRequested(stripeAccountId);
-    }
+    const account = await stripe.accounts.retrieve(business.stripe_account_id);
+    const capabilityFlags = getStripeCapabilityFlags(account);
 
     const { error: updateBusinessError } = await adminClient
       .from('businesses')
-      .update({
-        stripe_account_id: stripeAccountId,
-        ...getStripeCapabilityFlags(account),
-      })
+      .update(capabilityFlags)
       .eq('id', business.id);
 
     if (updateBusinessError) {
       throw new Error(updateBusinessError.message);
     }
 
-    const accountLink = await stripe.accountLinks.create({
-      account: stripeAccountId,
-      refresh_url: refreshUrl,
-      return_url: returnUrl,
-      type: 'account_onboarding',
-    });
-
     return new Response(
       JSON.stringify({
-        stripeAccountId,
-        onboardingUrl: accountLink.url,
-        expiresAt: accountLink.expires_at,
+        stripeAccountId: account.id,
+        chargesEnabled: account.charges_enabled,
+        payoutsEnabled: account.payouts_enabled,
+        cardPaymentsEnabled: capabilityFlags.stripe_card_payments_enabled,
+        transfersEnabled: capabilityFlags.stripe_transfers_enabled,
         cardPaymentsCapability: account.capabilities?.card_payments || null,
         transfersCapability: account.capabilities?.transfers || null,
+        capabilities: account.capabilities || {},
+        requirementsCurrentlyDue: account.requirements?.currently_due || [],
+        requirementsEventuallyDue: account.requirements?.eventually_due || [],
+        requirementsPendingVerification: account.requirements?.pending_verification || [],
+        requirementsDisabledReason: account.requirements?.disabled_reason || null,
       }),
       {
         status: 200,
@@ -159,7 +119,9 @@ Deno.serve(async (req) => {
       }
     );
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Failed to create Stripe onboarding link.';
+    const message =
+      error instanceof Error ? error.message : 'Failed to refresh Stripe Connect status.';
+
     return new Response(JSON.stringify({ error: message }), {
       status: 500,
       headers: { 'Content-Type': 'application/json' },

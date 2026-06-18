@@ -127,7 +127,7 @@ function isIgnorableRootLinkingUrl(url) {
 const Stack = createNativeStackNavigator();
 const BOOKING_SELECT_COLUMNS =
   'id, client_id, client_name, service, date, time, status, price, notes, staff_member_id, booking_metadata, user_id, created_at, customer_email, customer_phone, booking_source, booking_token';
-const BUSINESS_SELECT_COLUMNS = 'id, owner_user_id, business_name, slug, description, timezone, services, public_booking_enabled, onboarding_completed, deposits_enabled, deposit_percentage, require_card_on_booking, stripe_account_id, stripe_charges_enabled, stripe_payouts_enabled, created_at';
+const BUSINESS_SELECT_COLUMNS = 'id, owner_user_id, business_name, slug, description, timezone, services, public_booking_enabled, onboarding_completed, deposits_enabled, deposit_percentage, require_card_on_booking, stripe_account_id, stripe_charges_enabled, stripe_payouts_enabled, stripe_card_payments_enabled, stripe_transfers_enabled, created_at';
 const BUSINESS_BOOTSTRAP_TIMEOUT_MS = 15000;
 
 function normalizeOnboardingStatus(businessRecord) {

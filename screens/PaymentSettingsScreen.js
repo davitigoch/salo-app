@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Linking, ScrollView, Text, TextInput, View } from 'react-native';
+import { Alert, Linking, RefreshControl, ScrollView, Text, TextInput, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ExpoLinking from 'expo-linking';
@@ -9,6 +9,7 @@ import PrimaryButton from '../components/PrimaryButton';
 import ScreenContainer from '../components/ScreenContainer';
 import SegmentedControl from '../components/SegmentedControl';
 import { COLORS } from '../constants/colors';
+import { getBookingSiteBaseUrl } from '../constants/bookingLink';
 import { supabase } from '../constants/supabase';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -40,11 +41,12 @@ function InfoRow({ label, value }) {
   );
 }
 
-function getStripeReturnUrls() {
-  const baseUrl = ExpoLinking.createURL('settings/payment');
+function getStripeReturnUrls(businessId) {
+  const baseUrl = getBookingSiteBaseUrl();
+
   return {
-    returnUrl: `${baseUrl}?stripe=return`,
-    refreshUrl: `${baseUrl}?stripe=refresh`,
+    refreshUrl: `${baseUrl}/stripe/refresh`,
+    returnUrl: `${baseUrl}/stripe/return?businessId=${encodeURIComponent(businessId)}`,
   };
 }
 
@@ -73,6 +75,7 @@ export default function PaymentSettingsScreen({ navigation }) {
   const [depositPercentage, setDepositPercentage] = useState('30');
   const [isSavingPayments, setIsSavingPayments] = useState(false);
   const [isConnectingStripe, setIsConnectingStripe] = useState(false);
+  const [isRefreshingStripeStatus, setIsRefreshingStripeStatus] = useState(false);
 
   const stripeStatus = useMemo(() => getStripeConnectStatus(business), [business]);
   const stripeConnectButton = useMemo(
@@ -90,13 +93,69 @@ export default function PaymentSettingsScreen({ navigation }) {
     setDepositPercentage(String(Number(business.deposit_percentage ?? 30)));
   }, [business]);
 
+  const refreshStripeConnectStatus = useCallback(
+    async ({ showAlerts = true } = {}) => {
+      if (!business?.id) {
+        return { ok: false };
+      }
+
+      if (!business?.stripe_account_id) {
+        if (showAlerts) {
+          Alert.alert('Stripe not connected', 'Connect Stripe before refreshing account status.');
+        }
+        return { ok: false };
+      }
+
+      setIsRefreshingStripeStatus(true);
+
+      try {
+        const { data, error } = await supabase.functions.invoke('refresh-stripe-connect-status', {
+          body: {
+            businessId: business.id,
+          },
+        });
+
+        if (error || data?.error) {
+          const message = await getEdgeFunctionErrorMessage({ error, data });
+          console.warn('[SALO] refresh-stripe-connect-status failed', {
+            message,
+            businessId: business.id,
+          });
+
+          if (showAlerts) {
+            Alert.alert('Could not refresh Stripe status', message);
+          }
+
+          return { ok: false, error: message };
+        }
+
+        await refreshBusiness?.();
+
+        if (showAlerts) {
+          if (data?.chargesEnabled && data?.cardPaymentsEnabled) {
+            Alert.alert('Stripe ready', 'Your account can now accept online payments.');
+          } else {
+            Alert.alert(
+              'Stripe setup pending',
+              'Stripe setup was submitted. Stripe may take a few minutes to enable payments.'
+            );
+          }
+        }
+
+        return { ok: true, data };
+      } catch (refreshError) {
+        console.warn('[SALO] refresh-stripe-connect-status network error', refreshError);
+        return { ok: false };
+      } finally {
+        setIsRefreshingStripeStatus(false);
+      }
+    },
+    [business?.id, business?.stripe_account_id, refreshBusiness]
+  );
+
   const handleStripeReturn = useCallback(async () => {
-    await refreshBusiness?.();
-    Alert.alert(
-      'Stripe setup updated',
-      'Your connection status has been refreshed. If onboarding is complete, payment collection will unlock shortly.'
-    );
-  }, [refreshBusiness]);
+    await refreshStripeConnectStatus({ showAlerts: true });
+  }, [refreshStripeConnectStatus]);
 
   useFocusEffect(
     useCallback(() => {
@@ -135,7 +194,11 @@ export default function PaymentSettingsScreen({ navigation }) {
 
     setIsConnectingStripe(true);
 
-    const { returnUrl, refreshUrl } = getStripeReturnUrls();
+    const { returnUrl, refreshUrl } = getStripeReturnUrls(business.id);
+
+    console.log('[SALO] Stripe refreshUrl', refreshUrl);
+    console.log('[SALO] Stripe returnUrl', returnUrl);
+
     const { data, error } = await supabase.functions.invoke('create-stripe-connect-account-link', {
       body: {
         businessId: business.id,
@@ -216,6 +279,13 @@ export default function PaymentSettingsScreen({ navigation }) {
       <BackButton navigation={navigation} />
       <ScrollView
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshingStripeStatus}
+            onRefresh={() => refreshStripeConnectStatus({ showAlerts: true })}
+            tintColor="#A78BFA"
+          />
+        }
         contentContainerStyle={{
           paddingHorizontal: 24,
           paddingTop: insets.top + 58,
@@ -277,6 +347,10 @@ export default function PaymentSettingsScreen({ navigation }) {
             label="Stripe account"
             value={business?.stripe_account_id ? 'Connected' : 'Not connected'}
           />
+          <InfoRow
+            label="Card payments"
+            value={business?.stripe_card_payments_enabled ? 'Enabled' : 'Pending'}
+          />
           <InfoRow label="Deposits enabled" value={business?.deposits_enabled ? 'Yes' : 'No'} />
           <InfoRow
             label="Deposit percentage"
@@ -294,6 +368,14 @@ export default function PaymentSettingsScreen({ navigation }) {
               Stripe is connected. You can accept online payments for public bookings.
             </Text>
           )}
+
+          {business?.stripe_account_id ? (
+            <PrimaryButton
+              title={isRefreshingStripeStatus ? 'Refreshing...' : 'Refresh Stripe Status'}
+              onPress={() => refreshStripeConnectStatus({ showAlerts: true })}
+              style={{ marginTop: 14, backgroundColor: '#272730' }}
+            />
+          ) : null}
         </View>
 
         <View

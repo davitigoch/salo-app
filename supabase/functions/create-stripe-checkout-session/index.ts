@@ -129,7 +129,9 @@ Deno.serve(async (req) => {
 
   const { data: business, error: businessError } = await adminClient
     .from('businesses')
-    .select('id, business_name, stripe_account_id, deposits_enabled, deposit_percentage, require_card_on_booking')
+    .select(
+      'id, business_name, stripe_account_id, stripe_charges_enabled, stripe_card_payments_enabled, deposits_enabled, deposit_percentage, require_card_on_booking'
+    )
     .eq('id', bookingBusinessId)
     .single();
 
@@ -145,6 +147,19 @@ Deno.serve(async (req) => {
       status: 409,
       headers: { 'Content-Type': 'application/json' },
     });
+  }
+
+  if (!business.stripe_charges_enabled || !business.stripe_card_payments_enabled) {
+    return new Response(
+      JSON.stringify({
+        error:
+          'This salon has not finished payment setup. Card payments must be enabled on the connected Stripe account.',
+      }),
+      {
+        status: 409,
+        headers: { 'Content-Type': 'application/json' },
+      }
+    );
   }
 
   let amountToCharge = fullAmount;

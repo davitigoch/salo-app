@@ -1215,6 +1215,12 @@ alter table public.businesses
 add column if not exists stripe_payouts_enabled boolean not null default false;
 
 alter table public.businesses
+add column if not exists stripe_card_payments_enabled boolean not null default false;
+
+alter table public.businesses
+add column if not exists stripe_transfers_enabled boolean not null default false;
+
+alter table public.businesses
 drop constraint if exists businesses_deposit_percentage_check;
 
 alter table public.businesses

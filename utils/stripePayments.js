@@ -20,7 +20,7 @@ export function getStripeConnectStatus(business) {
     };
   }
 
-  if (!business.stripe_charges_enabled) {
+  if (!business.stripe_charges_enabled || !business.stripe_card_payments_enabled) {
     return {
       key: 'pending_verification',
       label: 'Pending Verification',
@@ -65,13 +65,19 @@ export function isPublicBookingPaymentRequired(business) {
 }
 
 export function isPublicBookingStripeReady(business) {
-  return Boolean(business?.stripe_account_id && business?.stripe_charges_enabled === true);
+  return Boolean(
+    business?.stripe_account_id &&
+      business?.stripe_charges_enabled === true &&
+      business?.stripe_card_payments_enabled === true
+  );
 }
 
 export function logPublicBookingPaymentSettings(business) {
   console.log('[SALO] public booking payment settings', {
     stripe_account_id: business?.stripe_account_id ?? null,
     stripe_charges_enabled: business?.stripe_charges_enabled === true,
+    stripe_card_payments_enabled: business?.stripe_card_payments_enabled === true,
+    stripe_transfers_enabled: business?.stripe_transfers_enabled === true,
     deposits_enabled: business?.deposits_enabled === true,
     deposit_percentage: business?.deposit_percentage ?? null,
     require_card_on_booking: business?.require_card_on_booking === true,
