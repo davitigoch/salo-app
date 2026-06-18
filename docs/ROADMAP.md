@@ -94,7 +94,7 @@ Centralized in-app notification center for business owners — a durable feed be
 
 | Phase | Scope | Status |
 |-------|-------|--------|
-| 4.1 | Database + RLS (`notification_events`, `notification_reads`, indexes, backfill hooks) | Not started |
+| 4.1 | Database + RLS (`notification_events`, `notification_reads`, indexes, RPCs) | Implemented (`20260702_notification_center_foundation.sql`) |
 | 4.2 | Notification service (emit events from booking, payment, calendar, messaging pipelines) | Not started |
 | 4.3 | Realtime delivery (business-scoped channel, unread count RPC) | Not started |
 | 4.4 | UI screens (inbox, detail, badge, read actions) | Not started |
