@@ -46,7 +46,9 @@ Upgrade lightweight CRM into full **Client Profiles** with business-scoped data,
 
 **Status:** Phase 3.1 database foundation implemented (`20260701_client_profiles_foundation.sql`).
 
-**Status:** Phase 3.2 app integration (not started).
+**Status:** Phase 3.2 app data layer wired to client profile RPCs.
+
+**Status:** Phase 3.3 UI refresh (not started).
 
 ---
 

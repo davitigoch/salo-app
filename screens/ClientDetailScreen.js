@@ -17,7 +17,6 @@ import { ROUTES } from '../constants/routes';
 import { useBookings } from '../context/BookingsContext';
 import { useClients } from '../context/ClientsContext';
 import {
-  formatShortBookingDate,
   getClientCrmStats,
   getClientInitials,
   getClientTimelineEvents,
@@ -309,17 +308,13 @@ export default function ClientDetailScreen({ navigation, route }) {
           </Text>
           <ActivityRow
             label="Last Visit"
-            value={stats.lastVisit ? formatShortBookingDate(stats.lastVisit) : 'No visits yet'}
-            isEmpty={!stats.lastVisit}
+            value={stats.lastVisitLabel}
+            isEmpty={!stats.lastVisit && !client.last_visit_at}
           />
           <ActivityRow
             label="Next Appointment"
-            value={
-              stats.nextAppointment
-                ? formatShortBookingDate(stats.nextAppointment)
-                : 'No upcoming appointments.'
-            }
-            isEmpty={!stats.nextAppointment}
+            value={stats.nextAppointmentLabel}
+            isEmpty={!stats.nextAppointment && !client.next_appointment_at}
           />
         </View>
 

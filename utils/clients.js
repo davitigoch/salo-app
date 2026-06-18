@@ -1,6 +1,7 @@
 import { parseBookingDateTime } from './bookings';
 import { formatTimeDisplay } from '../constants/availability';
 import { getStatusLabel, getStatusStyles } from '../constants/bookingStatus';
+import { getClientDisplayName } from './clientProfiles';
 
 const VISIT_STATUSES = new Set(['pending', 'confirmed', 'completed']);
 const REVENUE_STATUSES = new Set(['confirmed', 'completed']);
@@ -52,7 +53,11 @@ export function formatBookingPrice(booking) {
   return `$${Number(booking?.price || 0).toFixed(0)}`;
 }
 
-export function getClientInitials(clientName) {
+export function getClientInitials(clientNameOrClient) {
+  const clientName =
+    typeof clientNameOrClient === 'string'
+      ? clientNameOrClient
+      : getClientDisplayName(clientNameOrClient);
   const parts = String(clientName || '').trim().split(/\s+/).filter(Boolean);
 
   if (parts.length >= 2) {
@@ -64,6 +69,41 @@ export function getClientInitials(clientName) {
   }
 
   return '?';
+}
+
+function formatProfileDateLabel(value) {
+  const date = value instanceof Date ? value : new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return '—';
+  }
+
+  return date.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+  });
+}
+
+function hasRpcProfileStats(client) {
+  return (
+    client &&
+    (client.lifetime_bookings !== undefined ||
+      client.lifetime_revenue !== undefined ||
+      client.last_visit_at !== undefined ||
+      client.next_appointment_at !== undefined)
+  );
+}
+
+function getClientsForBooking(booking, clients) {
+  if (!booking || !clients?.length) {
+    return [];
+  }
+
+  if (booking.business_id) {
+    return clients.filter((client) => client.business_id === booking.business_id);
+  }
+
+  return clients;
 }
 
 
@@ -112,13 +152,15 @@ export function findClientForBooking(booking, clients) {
     return null;
   }
 
+  const scopedClients = getClientsForBooking(booking, clients);
+
   if (booking.client_id) {
-    return clients.find((client) => client.id === booking.client_id) || null;
+    return scopedClients.find((client) => client.id === booking.client_id) || null;
   }
 
   const email = normalizeEmail(booking.customer_email);
   if (email) {
-    const byEmail = clients.find((client) => normalizeEmail(client.email) === email);
+    const byEmail = scopedClients.find((client) => normalizeEmail(client.email) === email);
     if (byEmail) {
       return byEmail;
     }
@@ -126,7 +168,7 @@ export function findClientForBooking(booking, clients) {
 
   const phone = normalizePhone(booking.customer_phone);
   if (phone) {
-    const byPhone = clients.find((client) => normalizePhone(client.phone) === phone);
+    const byPhone = scopedClients.find((client) => normalizePhone(client.phone) === phone);
     if (byPhone) {
       return byPhone;
     }
@@ -137,7 +179,11 @@ export function findClientForBooking(booking, clients) {
     return null;
   }
 
-  return clients.find((client) => normalizeClientName(client.client_name) === bookingName) || null;
+  return (
+    scopedClients.find((client) => normalizeClientName(getClientDisplayName(client)) === bookingName) ||
+    scopedClients.find((client) => normalizeClientName(client.client_name) === bookingName) ||
+    null
+  );
 }
 
 export function bookingMatchesClient(client, booking) {
@@ -147,6 +193,14 @@ export function bookingMatchesClient(client, booking) {
 
   if (client.id && booking.client_id) {
     return booking.client_id === client.id;
+  }
+
+  if (
+    booking.business_id &&
+    client.business_id &&
+    booking.business_id !== client.business_id
+  ) {
+    return false;
   }
 
   if (booking.client_id && client.id && booking.client_id !== client.id) {
@@ -165,7 +219,7 @@ export function bookingMatchesClient(client, booking) {
     return true;
   }
 
-  const clientName = normalizeClientName(client.client_name);
+  const clientName = normalizeClientName(getClientDisplayName(client));
   const bookingName = normalizeClientName(booking.client_name);
 
   return Boolean(clientName && bookingName && clientName === bookingName);
@@ -188,6 +242,28 @@ export function getClientBookingsForClient(client, bookings) {
 }
 
 export function getClientCrmStats(client, bookings, now = new Date()) {
+  if (hasRpcProfileStats(client)) {
+    return {
+      totalVisits: Number(client.lifetime_bookings || 0),
+      completedVisits: Number(client.lifetime_bookings || 0),
+      lifetimeRevenue: Number(client.lifetime_revenue || 0),
+      averageTicket: Number(client.average_spend || 0),
+      noShows: Number(client.no_show_count || 0),
+      cancellationCount: Number(client.cancellation_count || 0),
+      rescheduledCount: Number(client.rescheduled_count || 0),
+      lastVisit: null,
+      lastVisitLabel: client.last_visit_at
+        ? formatProfileDateLabel(client.last_visit_at)
+        : 'No visits yet',
+      nextAppointment: null,
+      nextAppointmentLabel: client.next_appointment_at
+        ? formatProfileDateLabel(client.next_appointment_at)
+        : 'No upcoming appointments.',
+      upcomingAppointments: [],
+      appointmentHistory: [],
+    };
+  }
+
   const clientBookings = getClientBookingsForClient(client, bookings);
   const nowMs = now.getTime();
 
@@ -254,6 +330,15 @@ export function getClientCrmStats(client, bookings, now = new Date()) {
 }
 
 export function getClientVisitStats(client, bookings) {
+  if (hasRpcProfileStats(client)) {
+    return {
+      visitCount: Number(client.lifetime_bookings || 0),
+      lastVisitLabel: client.last_visit_at
+        ? formatProfileDateLabel(client.last_visit_at)
+        : 'No visits yet',
+    };
+  }
+
   const stats = getClientCrmStats(client, bookings);
 
   return {
@@ -270,7 +355,15 @@ export function filterClients(clients, query) {
   }
 
   return clients.filter((client) => {
-    const searchable = [client.client_name, client.phone, client.email, client.notes];
+    const searchable = [
+      getClientDisplayName(client),
+      client.client_name,
+      client.first_name,
+      client.last_name,
+      client.phone,
+      client.email,
+      client.notes,
+    ];
 
     return searchable.some((value) =>
       String(value || '').toLowerCase().includes(normalizedQuery)
@@ -350,6 +443,8 @@ export async function syncClientFromConfirmedPublicBooking({
     phone: String(booking.customer_phone || '').trim(),
     email: String(booking.customer_email || '').trim(),
     notes: bookingNotes,
+    source: 'public_booking',
+    business_id: booking.business_id || null,
   });
 
   if (error) {

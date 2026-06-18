@@ -35,6 +35,14 @@ import {
   getUnlinkedBookings,
   syncClientFromConfirmedPublicBooking,
 } from '../utils/clients';
+import {
+  buildClientInsertPayload,
+  buildClientUpdatePayload,
+  CLIENT_TABLE_SELECT,
+  fetchClientProfile,
+  fetchClientProfilesList,
+  normalizeClientTableRow,
+} from '../utils/clientProfiles';
 import { AuthProvider } from '../context/AuthContext';
 import { BookingsProvider } from '../context/BookingsContext';
 import { ClientsProvider } from '../context/ClientsContext';
@@ -828,19 +836,19 @@ export default function AppNavigator() {
   }, [bookings.length, session?.user?.id]);
 
   const fetchClients = useCallback(async () => {
-    if (!session?.user?.id) {
+    if (!session?.user?.id || !business?.id) {
       setClients([]);
+      setIsClientsLoading(false);
       return { error: null };
     }
 
     setIsClientsLoading(true);
     setClientsError('');
 
-    const { data, error } = await supabase
-      .from('clients')
-      .select('id, client_name, phone, email, notes, user_id, created_at')
-      .eq('user_id', session.user.id)
-      .order('created_at', { ascending: false });
+    const { data, error } = await fetchClientProfilesList(supabase, business.id, {
+      limit: 100,
+      offset: 0,
+    });
 
     if (error) {
       setClientsError(error.message);
@@ -851,7 +859,7 @@ export default function AppNavigator() {
     setClients(Array.isArray(data) ? data : []);
     setIsClientsLoading(false);
     return { error: null };
-  }, [session?.user?.id]);
+  }, [business?.id, session?.user?.id]);
 
   useEffect(() => {
     fetchClients();
@@ -1028,19 +1036,19 @@ export default function AppNavigator() {
   }, [business?.id, fetchStaffAvailability, session?.user?.id]);
 
   useEffect(() => {
-    if (!session?.user?.id) {
+    if (!session?.user?.id || !business?.id) {
       return undefined;
     }
 
     const clientsChannel = supabase
-      .channel(`clients-changes-${session.user.id}`)
+      .channel(`clients-changes-${business.id}`)
       .on(
         'postgres_changes',
         {
           event: '*',
           schema: 'public',
           table: 'clients',
-          filter: `user_id=eq.${session.user.id}`,
+          filter: `business_id=eq.${business.id}`,
         },
         () => {
           fetchClients();
@@ -1051,7 +1059,7 @@ export default function AppNavigator() {
     return () => {
       supabase.removeChannel(clientsChannel);
     };
-  }, [fetchClients, session?.user?.id]);
+  }, [business?.id, fetchClients, session?.user?.id]);
 
   useEffect(() => {
     if (!session?.user?.id || isBookingsLoading || isClientsLoading) {
@@ -1269,17 +1277,21 @@ export default function AppNavigator() {
       return { error: { message: 'User is not authenticated.' } };
     }
 
+    if (!business?.id) {
+      return { error: { message: 'Business profile is not ready. Please try again.' } };
+    }
+
     setClientsError('');
 
-    const payload = {
-      ...clientInput,
-      user_id: session.user.id,
-    };
+    const payload = buildClientInsertPayload(clientInput, {
+      businessId: clientInput?.business_id || business.id,
+      userId: session.user.id,
+    });
 
     const { data, error } = await supabase
       .from('clients')
       .insert(payload)
-      .select('id, client_name, phone, email, notes, user_id, created_at')
+      .select(CLIENT_TABLE_SELECT)
       .single();
 
     if (error) {
@@ -1287,8 +1299,9 @@ export default function AppNavigator() {
       return { error };
     }
 
-    setClients((previousClients) => [data, ...previousClients]);
-    return { error: null, data };
+    const normalizedClient = normalizeClientTableRow(data);
+    await fetchClients();
+    return { error: null, data: normalizedClient };
   };
 
   const updateClient = async (clientId, clientInput) => {
@@ -1296,14 +1309,20 @@ export default function AppNavigator() {
       return { error: { message: 'User is not authenticated.' } };
     }
 
+    if (!business?.id) {
+      return { error: { message: 'Business profile is not ready. Please try again.' } };
+    }
+
     setClientsError('');
+
+    const payload = buildClientUpdatePayload(clientInput);
 
     const { data, error } = await supabase
       .from('clients')
-      .update(clientInput)
+      .update(payload)
       .eq('id', clientId)
-      .eq('user_id', session.user.id)
-      .select('id, client_name, phone, email, notes, user_id, created_at')
+      .eq('business_id', business.id)
+      .select(CLIENT_TABLE_SELECT)
       .single();
 
     if (error) {
@@ -1311,18 +1330,26 @@ export default function AppNavigator() {
       return { error };
     }
 
+    const normalizedClient = normalizeClientTableRow(data);
+
     setClients((previousClients) =>
       previousClients.map((client) =>
-        client.id === clientId ? data : client
+        client.id === clientId ? { ...client, ...normalizedClient } : client
       )
     );
 
-    return { error: null, data };
+    await fetchClients();
+
+    return { error: null, data: normalizedClient };
   };
 
   const deleteClient = async (clientId) => {
     if (!session?.user?.id) {
       return { error: { message: 'User is not authenticated.' } };
+    }
+
+    if (!business?.id) {
+      return { error: { message: 'Business profile is not ready. Please try again.' } };
     }
 
     setClientsError('');
@@ -1331,7 +1358,7 @@ export default function AppNavigator() {
       .from('clients')
       .delete()
       .eq('id', clientId)
-      .eq('user_id', session.user.id);
+      .eq('business_id', business.id);
 
     if (error) {
       setClientsError(error.message);
@@ -1343,6 +1370,28 @@ export default function AppNavigator() {
     );
 
     return { error: null };
+  };
+
+  const getClientProfile = async (clientId) => {
+    if (!session?.user?.id) {
+      return { error: { message: 'User is not authenticated.' }, data: null };
+    }
+
+    const { data, error } = await fetchClientProfile(supabase, clientId);
+
+    if (error) {
+      return { error, data: null };
+    }
+
+    if (data?.client) {
+      setClients((previousClients) =>
+        previousClients.map((client) =>
+          client.id === data.client.id ? { ...client, ...data.client } : client
+        )
+      );
+    }
+
+    return { error: null, data };
   };
 
   const addService = async (serviceInput) => {
@@ -1664,6 +1713,7 @@ export default function AppNavigator() {
       addClient,
       updateClient,
       deleteClient,
+      getClientProfile,
     }),
     [clients, isClientsLoading, clientsError, fetchClients]
   );
