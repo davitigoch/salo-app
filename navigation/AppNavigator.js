@@ -46,6 +46,7 @@ import {
 import { AuthProvider } from '../context/AuthContext';
 import { BookingsProvider } from '../context/BookingsContext';
 import { ClientsProvider } from '../context/ClientsContext';
+import { NotificationsProvider } from '../context/NotificationsContext';
 import { ServicesProvider } from '../context/ServicesContext';
 import { StaffProvider } from '../context/StaffContext';
 import AuthLoadingScreen from '../screens/AuthLoadingScreen';
@@ -1761,6 +1762,7 @@ export default function AppNavigator() {
 
   return (
     <AuthProvider value={authValue}>
+      <NotificationsProvider>
       <BookingsProvider value={contextValue}>
         <ClientsProvider value={clientsValue}>
           <ServicesProvider value={servicesValue}>
@@ -1911,6 +1913,7 @@ export default function AppNavigator() {
           </ServicesProvider>
         </ClientsProvider>
       </BookingsProvider>
+      </NotificationsProvider>
     </AuthProvider>
   );
 }

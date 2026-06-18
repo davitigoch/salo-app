@@ -10,6 +10,7 @@ import { ROUTES } from '../constants/routes';
 import { useBookings } from '../context/BookingsContext';
 import { useClients } from '../context/ClientsContext';
 import { useAuth } from '../context/AuthContext';
+import { useNotifications } from '../context/NotificationsContext';
 
 function parseBookingDateTime(booking) {
   const dateParts = String(booking.date || '').split('-').map(Number);
@@ -114,6 +115,7 @@ export default function HomeScreen({ navigation }) {
   const { bookings, isBookingsLoading } = useBookings();
   const { clients, isClientsLoading } = useClients();
   const { business } = useAuth();
+  const { unreadCount } = useNotifications();
 
   const now = new Date();
   const todayKey = toDateKey(now);
@@ -263,7 +265,35 @@ export default function HomeScreen({ navigation }) {
               justifyContent: 'center',
             }}
           >
-            <Ionicons name="sparkles" size={18} color={COLORS.accent} />
+            <Ionicons name="notifications-outline" size={20} color={COLORS.accent} />
+            {unreadCount > 0 ? (
+              <View
+                style={{
+                  position: 'absolute',
+                  top: -4,
+                  right: -4,
+                  minWidth: 18,
+                  height: 18,
+                  borderRadius: 999,
+                  paddingHorizontal: 4,
+                  backgroundColor: '#8B5CF6',
+                  borderWidth: 1,
+                  borderColor: '#151521',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <Text
+                  style={{
+                    color: '#FFFFFF',
+                    fontSize: 10,
+                    fontWeight: '800',
+                  }}
+                >
+                  {unreadCount > 99 ? '99+' : unreadCount}
+                </Text>
+              </View>
+            ) : null}
           </View>
         </View>
 

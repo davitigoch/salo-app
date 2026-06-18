@@ -5,6 +5,8 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 
 import { COLORS } from '../constants/colors';
 import { ROUTES } from '../constants/routes';
+import { useNotifications } from '../context/NotificationsContext';
+import { formatNotificationBadgeCount } from '../utils/notificationCenter';
 import HomeScreen from '../screens/HomeScreen';
 import BookingsScreen from '../screens/BookingsScreen';
 import ClientsScreen from '../screens/ClientsScreen';
@@ -13,6 +15,9 @@ import SettingsScreen from '../screens/SettingsScreen';
 const Tab = createBottomTabNavigator();
 
 export default function MainTabNavigator() {
+  const { unreadCount } = useNotifications();
+  const homeTabBadge = formatNotificationBadgeCount(unreadCount);
+
   return (
     <Tab.Navigator
       screenOptions={{
@@ -38,6 +43,7 @@ export default function MainTabNavigator() {
         name={ROUTES.Home}
         component={HomeScreen}
         options={{
+          tabBarBadge: homeTabBadge || undefined,
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="home" size={size} color={color} />
           ),
