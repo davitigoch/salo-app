@@ -1,7 +1,6 @@
 # PR3 — Client Profiles: Technical Design & Implementation Plan
 
-**Status:** Proposed (pre-implementation)  
-**Goal:** Evolve SALO from salon-centric guest lists into a **generic Client CRM** for any appointment-based service business.
+**Status:** MVP complete (Phases 3.1–3.3). Phase 3.4 (tags & preferred staff UI) deferred post-MVP.
 
 ---
 

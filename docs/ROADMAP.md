@@ -8,6 +8,19 @@ Terminology is industry-neutral: **Client**, **Appointment**, **Service**, **Sta
 
 ## Completed
 
+### PR3 — Client Profiles (MVP) ✅
+
+Business-scoped client identity, profile metrics, relationship fields, and segmented appointment history.
+
+- Database foundation (`clients` evolution, tags schema, `client_profile_stats`, RPCs)
+- App data layer (`list_client_profiles`, `get_client_profile`)
+- Client profile screen (metrics, relationship, contact, notes, upcoming/past appointments)
+- Scroll-stable layout; pull-to-refresh on user action only
+
+**Design doc:** [pr3-client-profiles-design.md](./pr3-client-profiles-design.md)
+
+**Deferred post-MVP:** Phase 3.4 tags UI, preferred staff picker.
+
 ### Google Calendar integration (MVP) ✅
 
 Verified end-to-end (June 2026).
@@ -22,47 +35,82 @@ Verified end-to-end (June 2026).
 - Sync monitoring fields on `bookings` and `google_calendar_connections`
 - One-way sync: SALO → Google only
 
-**Commits:** foundation → OAuth → settings UX → sync worker.
+### Public Booking (MVP) ✅
+
+- Public booking page per business
+- Service / staff / slot selection
+- Client contact capture
+- Booking request → owner workflow
+
+### Stripe Deposits ✅
+
+- Stripe Connect onboarding
+- Deposit collection on public bookings
+- Payment status on bookings
+- Owner payment settings screen
 
 ### Core platform (prior releases) ✅
 
 - Business onboarding, services, staff, availability
 - Owner booking management (calendar, daily schedule)
-- Public booking + Stripe deposits / payments
-- SMS notifications + owner push notifications
+- SMS notifications + owner push notifications (device alerts)
 - Client appointment portal (reschedule / cancel)
 - Analytics dashboard (baseline)
-- Basic `clients` table + list/detail screens (pre-PR3)
+- Basic `clients` table + list/detail screens (superseded by PR3)
 
 ---
 
 ## In progress / next
 
-### PR3 — Client Profiles 🎯 **Next priority**
+### PR4 — Notification Center 🎯 **Next priority**
 
-Upgrade lightweight CRM into full **Client Profiles** with business-scoped data, structured identity, relationship fields, computed metrics, and segmented history.
+Centralized in-app notification center for business owners — a durable feed beyond ephemeral push alerts.
 
-**Design doc:** [pr3-client-profiles-design.md](./pr3-client-profiles-design.md)
+**Design doc:** [pr4-notification-center-design.md](./pr4-notification-center-design.md)
 
-**Status:** Phase 3.1 database foundation implemented (`20260701_client_profiles_foundation.sql`).
+**Event types (MVP):**
 
-**Status:** Phase 3.2 app data layer wired to client profile RPCs.
+| Type | Trigger |
+|------|---------|
+| Booking created | Owner or staff creates a booking |
+| Booking confirmed | Status → confirmed |
+| Booking cancelled | Status → cancelled |
+| Booking rescheduled | Date/time or staff change |
+| Public booking request | New request from public booking flow |
+| Payment received | Stripe deposit or payment succeeded |
+| Google Calendar sync failure | `process-calendar-sync-jobs` permanent failure |
+| SMS / email delivery failure | Outbound notification job failed |
 
-**Status:** Phase 3.3 client profile screen upgrade complete.
+**Database:** `notification_events`, `notification_reads`
 
-**Status:** Phase 3.4 tags and preferred staff UI (not started).
+**App features:**
+
+- Unread badge on app navigation
+- Mark as read / mark all as read
+- Notification detail screen (deep link to booking, client, or settings)
+- Realtime updates via Supabase Realtime
+
+**Phases:**
+
+| Phase | Scope | Status |
+|-------|-------|--------|
+| 4.1 | Database + RLS (`notification_events`, `notification_reads`, indexes, backfill hooks) | Not started |
+| 4.2 | Notification service (emit events from booking, payment, calendar, messaging pipelines) | Not started |
+| 4.3 | Realtime delivery (business-scoped channel, unread count RPC) | Not started |
+| 4.4 | UI screens (inbox, detail, badge, read actions) | Not started |
 
 ---
 
-## Planned (after PR3)
+## Planned (after PR4)
 
 | Area | Summary |
 |------|---------|
+| PR3.4 — Tags & preferred staff | Tag management UI; preferred staff picker on client profile |
 | Marketing & campaigns | Segments from tags + stats; email/SMS campaign hooks |
 | Rebooking reminders | Rules engine on `last_visit` / `next_appointment` |
 | Loyalty programs | Points / visit tiers (schema stubs in PR3) |
 | AI assistant | Client context bundle RPC for scheduling + outreach |
-| Google Calendar v2 | Staff calendars, busy import, multi-calendar (explicitly out of MVP scope) |
+| Google Calendar v2 | Staff calendars, busy import, multi-calendar |
 | Brands / locations | Multi-location businesses under one owner account |
 
 ---
@@ -73,3 +121,4 @@ Upgrade lightweight CRM into full **Client Profiles** with business-scoped data,
 - Staff-level Google calendars
 - Beauty-industry-only terminology or workflows
 - Full marketing automation UI
+- Client-facing notification center (owner app only for PR4)
