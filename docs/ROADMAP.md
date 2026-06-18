@@ -44,7 +44,9 @@ Upgrade lightweight CRM into full **Client Profiles** with business-scoped data,
 
 **Design doc:** [pr3-client-profiles-design.md](./pr3-client-profiles-design.md)
 
-**Status:** Design approved for implementation (not started).
+**Status:** Phase 3.1 database foundation implemented (`20260701_client_profiles_foundation.sql`).
+
+**Status:** Phase 3.2 app integration (not started).
 
 ---
 
